@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "peak2anno"
+version = "0.1.0"
+description = "Annotate genomic peaks to genes, genomic contexts, and chromatin states."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+authors = [
+  {name = "St. Jude CAB"}
+]
+keywords = ["bioinformatics", "genomics", "BED", "peak annotation"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Bio-Informatics"
+]
+dependencies = []
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.5"]
+test = ["pytest>=7"]
+
+[project.scripts]
+peak2anno = "peak2anno.cli:main"
+sjcab_peak2anno = "peak2anno.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+

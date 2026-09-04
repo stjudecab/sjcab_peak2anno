@@ -1,0 +1,49 @@
+# 1. 忽略所有文件和文件夹
+*
+
+# 2. 不忽略文件夹（必须，否则 Git 无法进入子目录寻找白名单文件）
+!*$/
+!**/
+
+# 3. 白名单：允许追踪的后缀与文件
+!**/*.nf
+!**/*.py
+!**/*.config
+!**/*.sh
+!**/samp*.csv
+!**/*.lst
+!**/*.ts
+!**/*.js
+!**/*.toml
+!**/*.yml
+!**/*.json
+!**/*.lock
+!**/.env*
+!**/Dockerfile
+!**/.gitignore
+!**/*.md
+!.aiguard_patches
+!**/*meta*tsv
+!**/*meta*csv
+**/.git/
+
+# 4. 显式排除特定的依赖与缓存文件夹（覆盖前面的白名单）
+*.log
+.nextflow.log*
+_site/
+.sass-cache/
+node_modules/
+.nextflow/
+__pycache__/
+.venv/
+venv/
+dist/
+build/
+.pixi/
+.pixi-cache/
+.mamba-root/
+.hf_home/
+.ruff_cache/
+.pytest_cache/
+.codex/
+.agents/

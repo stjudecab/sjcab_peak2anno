@@ -1,0 +1,436 @@
+"""Small BED and interval helpers used by peak2anno commands."""
+
+from __future__ import annotations
+
+import bisect
+import csv
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+
+
+REGION_RE = re.compile(r"^([^:]+):(\d+)-(\d+)$")
+
+
+@dataclass(frozen=True)
+class BedRecord:
+    """Represent one BED-like interval.
+
+    Args:
+        chrom (str): Chromosome or contig name.
+        start (int): Zero-based half-open start coordinate.
+        end (int): Zero-based half-open end coordinate.
+        fields (Tuple[str, ...]): Original parsed fields.
+    """
+
+    chrom: str
+    start: int
+    end: int
+    fields: Tuple[str, ...]
+
+    @property
+    def length(self) -> int:
+        """Return interval length in base pairs."""
+        return max(0, self.end - self.start)
+
+    @property
+    def name(self) -> str:
+        """Return BED column 4 or '.' when absent."""
+        return self.fields[3] if len(self.fields) > 3 and self.fields[3] else "."
+
+    @property
+    def score(self) -> str:
+        """Return BED column 5 or '.' when absent."""
+        return self.fields[4] if len(self.fields) > 4 and self.fields[4] else "."
+
+    @property
+    def strand(self) -> str:
+        """Return BED column 6 or '.' when absent."""
+        return self.fields[5] if len(self.fields) > 5 and self.fields[5] else "."
+
+    @property
+    def gene_id(self) -> str:
+        """Return BED column 7 or '.' when absent."""
+        return self.fields[6] if len(self.fields) > 6 and self.fields[6] else "."
+
+    @property
+    def transcript_id(self) -> str:
+        """Return BED column 8 or '.' when absent."""
+        return self.fields[7] if len(self.fields) > 7 and self.fields[7] else "."
+
+    @property
+    def gene_type(self) -> Optional[str]:
+        """Return BED column 9 when present."""
+        return self.fields[8] if len(self.fields) > 8 and self.fields[8] else None
+
+
+@dataclass(frozen=True)
+class InputRegion:
+    """Represent one input row with genomic coordinates.
+
+    Args:
+        chrom (str): Chromosome or contig name.
+        start (int): Zero-based half-open start coordinate.
+        end (int): Zero-based half-open end coordinate.
+        values (Tuple[str, ...]): Original table values.
+    """
+
+    chrom: str
+    start: int
+    end: int
+    values: Tuple[str, ...]
+
+    @property
+    def length(self) -> int:
+        """Return interval length in base pairs."""
+        return max(0, self.end - self.start)
+
+    @property
+    def region_name(self) -> str:
+        """Return a chr:start-end region string."""
+        return f"{self.chrom}:{self.start}-{self.end}"
+
+
+class IntervalIndex:
+    """Chromosome-indexed interval collection with overlap queries."""
+
+    def __init__(self, records: Iterable[BedRecord]):
+        """Build an interval index.
+
+        Args:
+            records (Iterable[BedRecord]): BED-like records to index.
+        """
+        grouped: Dict[str, List[BedRecord]] = {}
+        for record in records:
+            if record.end <= record.start:
+                continue
+            grouped.setdefault(record.chrom, []).append(record)
+        self.records_by_chrom: Dict[str, List[BedRecord]] = {}
+        self.starts_by_chrom: Dict[str, List[int]] = {}
+        self.prefix_max_end_by_chrom: Dict[str, List[int]] = {}
+        for chrom, chrom_records in grouped.items():
+            chrom_records.sort(key=lambda item: (item.start, item.end))
+            self.records_by_chrom[chrom] = chrom_records
+            self.starts_by_chrom[chrom] = [item.start for item in chrom_records]
+            prefix: List[int] = []
+            max_end = 0
+            for item in chrom_records:
+                max_end = max(max_end, item.end)
+                prefix.append(max_end)
+            self.prefix_max_end_by_chrom[chrom] = prefix
+
+    def query(self, chrom: str, start: int, end: int) -> Iterator[BedRecord]:
+        """Yield records overlapping a query interval.
+
+        Args:
+            chrom (str): Chromosome or contig name.
+            start (int): Query start coordinate.
+            end (int): Query end coordinate.
+
+        Yields:
+            BedRecord: Records with positive overlap.
+        """
+        records = self.records_by_chrom.get(chrom)
+        if not records or end <= start:
+            return
+        starts = self.starts_by_chrom[chrom]
+        prefix = self.prefix_max_end_by_chrom[chrom]
+        idx = bisect.bisect_left(starts, end)
+        for offset in range(idx - 1, -1, -1):
+            if records[offset].end > start:
+                yield records[offset]
+            if offset > 0 and prefix[offset - 1] <= start:
+                break
+
+    def records_for_chrom(self, chrom: str) -> Sequence[BedRecord]:
+        """Return sorted records for a chromosome."""
+        return self.records_by_chrom.get(chrom, ())
+
+
+def split_fields(line: str) -> List[str]:
+    """Split a table line into fields while preferring tab separation."""
+    text = line.rstrip("\n")
+    if "\t" in text:
+        return text.split("\t")
+    return text.split()
+
+
+def is_int(text: str) -> bool:
+    """Return whether text can be parsed as an integer."""
+    try:
+        int(text)
+    except ValueError:
+        return False
+    return True
+
+
+def parse_region(text: str) -> Tuple[str, int, int]:
+    """Parse a region string of the form chr:start-end.
+
+    Args:
+        text (str): Region text.
+
+    Returns:
+        Tuple[str, int, int]: Chromosome, start, and end.
+
+    Raises:
+        ValueError: If the text is not a supported region string.
+    """
+    match = REGION_RE.match(text)
+    if not match:
+        raise ValueError(f"Expected region string like chr1:100-200, found {text!r}")
+    chrom, start, end = match.groups()
+    return chrom, int(start), int(end)
+
+
+def normalize_header(header: Sequence[str]) -> Dict[str, int]:
+    """Map lower-case column names to positions."""
+    return {name.lower(): idx for idx, name in enumerate(header)}
+
+
+def coordinate_columns(header: Sequence[str]) -> Tuple[Optional[int], Optional[int], Optional[int], Optional[int]]:
+    """Return column positions for region or chrom/start/end fields."""
+    columns = normalize_header(header)
+    region_idx = columns.get("region")
+    chrom_idx = None
+    for name in ("chr", "chrom", "chromosome"):
+        if name in columns:
+            chrom_idx = columns[name]
+            break
+    start_idx = None
+    for name in ("start", "chromstart"):
+        if name in columns:
+            start_idx = columns[name]
+            break
+    end_idx = None
+    for name in ("end", "chromend"):
+        if name in columns:
+            end_idx = columns[name]
+            break
+    return region_idx, chrom_idx, start_idx, end_idx
+
+
+def read_regions(path: Path, header: str = "auto") -> Tuple[List[str], List[InputRegion]]:
+    """Read BED or TSV rows and extract genomic coordinates.
+
+    Args:
+        path (Path): Input BED or TSV path.
+        header (str): One of ``auto``, ``yes``, or ``no``.
+
+    Returns:
+        Tuple[List[str], List[InputRegion]]: Output header and parsed regions.
+
+    Raises:
+        ValueError: If coordinates cannot be resolved.
+    """
+    if header not in {"auto", "yes", "no"}:
+        raise ValueError("header must be one of: auto, yes, no")
+    rows: List[List[str]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for raw in handle:
+            if not raw.strip() or raw.startswith("#") or raw.startswith("track") or raw.startswith("browser"):
+                continue
+            rows.append(split_fields(raw))
+    if not rows:
+        raise ValueError(f"No data rows found in {path}")
+
+    first = rows[0]
+    has_header = header == "yes" or (
+        header == "auto" and not (len(first) >= 3 and is_int(first[1]) and is_int(first[2]))
+    )
+    if has_header:
+        out_header = first
+        data_rows = rows[1:]
+    else:
+        width = max(len(row) for row in rows)
+        default_names = ["chr", "start", "end", "name", "score", "strand"]
+        out_header = default_names[: min(width, len(default_names))]
+        if width > len(out_header):
+            out_header.extend(f"field{i}" for i in range(len(out_header) + 1, width + 1))
+        data_rows = rows
+
+    region_idx, chrom_idx, start_idx, end_idx = coordinate_columns(out_header)
+    regions: List[InputRegion] = []
+    for row_number, row in enumerate(data_rows, start=2 if has_header else 1):
+        if len(row) < len(out_header):
+            row = row + ["."] * (len(out_header) - len(row))
+        if region_idx is not None:
+            chrom, start, end = parse_region(row[region_idx])
+        elif chrom_idx is not None and start_idx is not None and end_idx is not None:
+            chrom = row[chrom_idx]
+            start = int(row[start_idx])
+            end = int(row[end_idx])
+        else:
+            raise ValueError(
+                f"Could not find Region or chr/start/end columns in {path}; header={out_header!r}"
+            )
+        if end < start:
+            raise ValueError(f"End before start at {path}:{row_number}: {row!r}")
+        regions.append(InputRegion(chrom=chrom, start=start, end=end, values=tuple(row)))
+    return out_header, regions
+
+
+def read_bed_records(
+    path: Path,
+    gene_type: str = "all",
+    as_tss: bool = False,
+) -> List[BedRecord]:
+    """Read BED-like records with optional gene-type filtering.
+
+    Args:
+        path (Path): BED path.
+        gene_type (str): ``all``, a single type, comma-separated types, or ``nomicro``.
+        as_tss (bool): Convert gene intervals into one-base TSS intervals using strand.
+
+    Returns:
+        List[BedRecord]: Parsed records.
+
+    Raises:
+        ValueError: If a requested gene type cannot be evaluated.
+    """
+    wanted_types = expand_gene_types(gene_type)
+    records: List[BedRecord] = []
+    saw_gene_type = False
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, raw in enumerate(handle, start=1):
+            if not raw.strip() or raw.startswith("#") or raw.startswith("track") or raw.startswith("browser"):
+                continue
+            fields = split_fields(raw)
+            if len(fields) < 3 or not is_int(fields[1]) or not is_int(fields[2]):
+                continue
+            if len(fields) > 8:
+                saw_gene_type = True
+            if wanted_types is not None:
+                if len(fields) <= 8:
+                    continue
+                if fields[8] not in wanted_types:
+                    continue
+            start = int(fields[1])
+            end = int(fields[2])
+            if as_tss and end > start + 1:
+                strand = fields[5] if len(fields) > 5 else "."
+                if strand == "-":
+                    start = end - 1
+                end = start + 1
+            if end < start:
+                raise ValueError(f"End before start at {path}:{line_number}")
+            tfields = tuple([fields[0], str(start), str(end)] + fields[3:])
+            records.append(BedRecord(chrom=fields[0], start=start, end=end, fields=tfields))
+    if wanted_types is not None and not saw_gene_type:
+        raise ValueError(
+            f"{path} does not have BED column 9 gene_type; cannot apply --gene-type {gene_type!r}"
+        )
+    return records
+
+
+def expand_gene_types(gene_type: str) -> Optional[set[str]]:
+    """Expand a gene-type selector into accepted BED column 9 values."""
+    if gene_type == "all":
+        return None
+    if gene_type == "nomicro":
+        return {
+            "bidirectional_promoter_lncrna",
+            "lincRNA",
+            "macro_lncRNA",
+            "processed_pseudogene",
+            "processed_transcript",
+            "protein_coding",
+            "transcribed_processed_pseudogene",
+            "transcribed_unitary_pseudogene",
+            "transcribed_unprocessed_pseudogene",
+            "translated_unprocessed_pseudogene",
+        }
+    return {item.strip() for item in gene_type.split(",") if item.strip()}
+
+
+def parse_distance(text: str) -> int:
+    """Parse a distance such as 2000, 2kb, or 1Mb into base pairs."""
+    value = text.strip()
+    match = re.match(r"^(\d+(?:\.\d+)?)(bp|b|kb|k|mb|m)?$", value, flags=re.IGNORECASE)
+    if not match:
+        raise ValueError(f"Unsupported distance value: {text!r}")
+    number = float(match.group(1))
+    suffix = (match.group(2) or "").lower()
+    if suffix in {"", "b", "bp"}:
+        pass
+    elif suffix in {"k", "kb"}:
+        number *= 1000
+    elif suffix in {"m", "mb"}:
+        number *= 1000000
+    return int(number)
+
+
+def format_distance(value: int) -> str:
+    """Format a distance for legacy-style column labels."""
+    if value % 1000000 == 0:
+        return f"{value // 1000000}Mb"
+    if value % 1000 == 0:
+        return f"{value // 1000}kb"
+    return f"{value}bp"
+
+
+@dataclass(frozen=True)
+class OverlapCutoff:
+    """Represent an overlap threshold as base pairs or query fraction."""
+
+    value: float
+    mode: str
+
+    def passes(self, overlap_bp: int, query_length: int) -> bool:
+        """Return whether an overlap satisfies this threshold."""
+        if self.mode == "fraction":
+            if query_length <= 0:
+                return False
+            return overlap_bp / query_length >= self.value
+        return overlap_bp >= self.value
+
+
+def parse_overlap_cutoff(text: str) -> OverlapCutoff:
+    """Parse overlap cutoff text such as 1bp, 10bp, 0.1, or 10%."""
+    value = text.strip()
+    if value.endswith("%"):
+        return OverlapCutoff(float(value[:-1]) / 100.0, "fraction")
+    if value.lower().endswith("bp"):
+        return OverlapCutoff(float(value[:-2]), "bp")
+    number = float(value)
+    if 0 < number < 1:
+        return OverlapCutoff(number, "fraction")
+    return OverlapCutoff(number, "bp")
+
+
+def overlap_bp(a_start: int, a_end: int, b_start: int, b_end: int) -> int:
+    """Return positive overlap in base pairs for two intervals."""
+    return max(0, min(a_end, b_end) - max(a_start, b_start))
+
+
+def distance_bp(a_start: int, a_end: int, b_start: int, b_end: int) -> int:
+    """Return bedtools-like non-negative interval distance."""
+    if overlap_bp(a_start, a_end, b_start, b_end) > 0:
+        return 0
+    if a_end <= b_start:
+        return b_start - a_end
+    return a_start - b_end
+
+
+def unique_join(values: Iterable[str]) -> str:
+    """Join non-empty values preserving first occurrence order."""
+    seen = set()
+    out: List[str] = []
+    for value in values:
+        if value in {"", "."}:
+            continue
+        if value not in seen:
+            seen.add(value)
+            out.append(value)
+    return ",".join(out) if out else "."
+
+
+def write_table(path: Path, header: Sequence[str], rows: Iterable[Sequence[object]]) -> None:
+    """Write a tab-delimited table."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow(header)
+        for row in rows:
+            writer.writerow(list(row))
