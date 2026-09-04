@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
+
+import pytest
 
 from peak2anno.context import (
     ContextConfig,
@@ -24,7 +27,8 @@ def write(path: Path, text: str) -> Path:
 
 def read_tsv(path: Path) -> list[list[str]]:
     """Read a tab-separated file into rows."""
-    return [line.split("\t") for line in path.read_text(encoding="utf-8").splitlines()]
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.reader(handle, delimiter="\t"))
 
 
 def make_toy_db(tmp_path: Path) -> Path:
@@ -91,9 +95,20 @@ def make_context_dir(tmp_path: Path) -> Path:
     return context
 
 
-def test_peak2gene_default_tss(tmp_path: Path) -> None:
+@pytest.fixture
+def toy_db(tmp_path: Path) -> Path:
+    """Provide a toy annotation database for a test."""
+    return make_toy_db(tmp_path)
+
+
+@pytest.fixture
+def context_dir(tmp_path: Path) -> Path:
+    """Provide a toy context annotation directory for a test."""
+    return make_context_dir(tmp_path)
+
+
+def test_peak2gene_default_tss(tmp_path: Path, toy_db: Path) -> None:
     """peak2gene should emit promoter, distal, and closest gene columns."""
-    db = make_toy_db(tmp_path)
     peaks = write(
         tmp_path / "peaks.bed",
         "\n".join(
@@ -111,7 +126,7 @@ def test_peak2gene_default_tss(tmp_path: Path) -> None:
             input_path=peaks,
             output_path=out,
             species="toy",
-            db_path=str(db),
+            db_path=str(toy_db),
             promoter_cutoff="100bp",
             enhancer_cutoff="3000bp",
         )
@@ -131,9 +146,8 @@ def test_peak2gene_default_tss(tmp_path: Path) -> None:
     assert rows[3][-3:] == ["GeneC", "ENSGC", "950"]
 
 
-def test_narrow_context_priority(tmp_path: Path) -> None:
+def test_narrow_context_priority(tmp_path: Path, context_dir: Path) -> None:
     """narrow2context should assign the first priority feature that overlaps."""
-    context = make_context_dir(tmp_path)
     peaks = write(
         tmp_path / "peaks.bed",
         "chr1\t0\t100\tp1\nchr1\t100\t200\tp2\nchr1\t200\t300\tp3\n",
@@ -144,7 +158,7 @@ def test_narrow_context_priority(tmp_path: Path) -> None:
             input_path=peaks,
             output_path=out,
             species="toy",
-            context_dir=context,
+            context_dir=context_dir,
             overlap_cutoff="0.5",
         )
     )
@@ -159,9 +173,8 @@ def test_narrow_context_priority(tmp_path: Path) -> None:
     assert summary_rows[1][4:7] == ["1", "0", "2"]
 
 
-def test_broad_context_reports_fractions(tmp_path: Path) -> None:
+def test_broad_context_reports_fractions(tmp_path: Path, context_dir: Path) -> None:
     """broad2context should report per-feature fractions instead of priority-only labels."""
-    context = make_context_dir(tmp_path)
     peaks = write(tmp_path / "peaks.bed", "chr1\t0\t100\tp1\n")
     out = tmp_path / "broad.tsv"
     output, summary = annotate_broad_context(
@@ -169,7 +182,7 @@ def test_broad_context_reports_fractions(tmp_path: Path) -> None:
             input_path=peaks,
             output_path=out,
             species="toy",
-            context_dir=context,
+            context_dir=context_dir,
             overlap_cutoff="1bp",
         )
     )
