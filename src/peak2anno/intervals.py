@@ -5,12 +5,13 @@ from __future__ import annotations
 import bisect
 import csv
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
 
-REGION_RE = re.compile(r"^([^:]+):(\d+)-(\d+)$")
+REGION_RE = re.compile(r"^(.+?)[\:\*\-=/\^;_%\$,](\d+)[\:\*\-=/\^;_%\$,](\d+)$")
 
 
 @dataclass(frozen=True)
@@ -166,7 +167,7 @@ def is_int(text: str) -> bool:
 
 
 def parse_region(text: str) -> Tuple[str, int, int]:
-    """Parse a region string of the form chr:start-end.
+    """Parse a region string with common delimiters, such as ``chr1:100-200``.
 
     Args:
         text (str): Region text.
@@ -211,7 +212,13 @@ def coordinate_columns(header: Sequence[str]) -> Tuple[Optional[int], Optional[i
     return region_idx, chrom_idx, start_idx, end_idx
 
 
-def read_regions(path: Path, header: str = "auto") -> Tuple[List[str], List[InputRegion]]:
+def read_regions(
+    path: Path,
+    header: str = "auto",
+    input_format: str = "auto",
+    columns: Optional[Tuple[int, int, int]] = None,
+    region_column: int = 0,
+) -> Tuple[List[str], List[InputRegion]]:
     """Read BED or TSV rows and extract genomic coordinates.
 
     Args:
@@ -226,6 +233,8 @@ def read_regions(path: Path, header: str = "auto") -> Tuple[List[str], List[Inpu
     """
     if header not in {"auto", "yes", "no"}:
         raise ValueError("header must be one of: auto, yes, no")
+    if input_format not in {"auto", "bed", "txt", "txtnohead"}:
+        raise ValueError("input format must be one of: auto, bed, txt, txtnohead")
     rows: List[List[str]] = []
     with path.open("r", encoding="utf-8") as handle:
         for raw in handle:
@@ -236,21 +245,43 @@ def read_regions(path: Path, header: str = "auto") -> Tuple[List[str], List[Inpu
         raise ValueError(f"No data rows found in {path}")
 
     first = rows[0]
-    has_header = header == "yes" or (
-        header == "auto" and not (len(first) >= 3 and is_int(first[1]) and is_int(first[2]))
+    if not 0 <= region_column < len(first):
+        raise ValueError(f"Region column {region_column} is not present in {path}")
+    coordinate_hint = columns or (0, 1, 2)
+    inferred_bed = (
+        max(coordinate_hint) < len(first)
+        and is_int(first[coordinate_hint[1]])
+        and is_int(first[coordinate_hint[2]])
     )
+    if input_format == "bed":
+        has_header = header == "yes" or (header == "auto" and not inferred_bed)
+    elif input_format in {"txt", "txtnohead"}:
+        has_header = input_format == "txt" and (header == "yes" or (header == "auto" and not REGION_RE.match(first[region_column])))
+    else:
+        has_header = header == "yes" or (
+            header == "auto"
+            and not (inferred_bed or REGION_RE.match(first[region_column]))
+        )
     if has_header:
         out_header = first
         data_rows = rows[1:]
     else:
         width = max(len(row) for row in rows)
         default_names = ["chr", "start", "end", "name", "score", "strand"]
+        if input_format in {"txt", "txtnohead"}:
+            default_names = ["Region"]
         out_header = default_names[: min(width, len(default_names))]
         if width > len(out_header):
             out_header.extend(f"field{i}" for i in range(len(out_header) + 1, width + 1))
         data_rows = rows
 
     region_idx, chrom_idx, start_idx, end_idx = coordinate_columns(out_header)
+    if input_format in {"txt", "txtnohead"} or (input_format == "auto" and not inferred_bed):
+        region_idx = region_column
+        chrom_idx = start_idx = end_idx = None
+    elif columns is not None:
+        chrom_idx, start_idx, end_idx = columns
+        region_idx = None
     regions: List[InputRegion] = []
     for row_number, row in enumerate(data_rows, start=2 if has_header else 1):
         if len(row) < len(out_header):
@@ -269,6 +300,52 @@ def read_regions(path: Path, header: str = "auto") -> Tuple[List[str], List[Inpu
             raise ValueError(f"End before start at {path}:{row_number}: {row!r}")
         regions.append(InputRegion(chrom=chrom, start=start, end=end, values=tuple(row)))
     return out_header, regions
+
+
+def detect_output_format(
+    path: Path,
+    header: str = "auto",
+    input_format: str = "auto",
+    columns: Optional[Tuple[int, int, int]] = None,
+    region_column: int = 0,
+) -> str:
+    """Return the default output mode implied by an input file."""
+    if input_format == "bed":
+        return "bed"
+    rows = []
+    with path.open("r", encoding="utf-8") as handle:
+        for raw in handle:
+            if raw.strip() and not raw.startswith(("#", "track", "browser")):
+                rows.append(split_fields(raw))
+                break
+    if not rows:
+        raise ValueError(f"No data rows found in {path}")
+    first = rows[0]
+    if input_format in {"txt", "txtnohead"}:
+        if input_format == "txtnohead":
+            return "txtnohead"
+        if header == "yes":
+            return "txt"
+        if header == "no":
+            return "txtnohead"
+        return "txt" if not REGION_RE.match(first[region_column]) else "txtnohead"
+    coordinate_hint = columns or (0, 1, 2)
+    is_bed = (
+        max(coordinate_hint) < len(first)
+        and is_int(first[coordinate_hint[1]])
+        and is_int(first[coordinate_hint[2]])
+    ) or (
+        len(first) >= 3
+        and first[1].lower() in {"start", "chromstart"}
+        and first[2].lower() in {"end", "chromend"}
+    )
+    if is_bed:
+        return "bed"
+    if header == "yes":
+        return "txt"
+    if header == "no":
+        return "txtnohead"
+    return "txt" if not REGION_RE.match(first[region_column]) else "txtnohead"
 
 
 def read_bed_records(
@@ -426,11 +503,45 @@ def unique_join(values: Iterable[str]) -> str:
     return ",".join(out) if out else "."
 
 
-def write_table(path: Path, header: Sequence[str], rows: Iterable[Sequence[object]]) -> None:
-    """Write a tab-delimited table."""
+def write_table(
+    path: Optional[Path],
+    header: Sequence[str],
+    rows: Iterable[Sequence[object]],
+    include_header: bool = True,
+) -> None:
+    """Write a tab-delimited table to a file or stdout when ``path`` is None."""
+    if path is None:
+        writer = csv.writer(sys.stdout, delimiter="\t", lineterminator="\n")
+        if include_header:
+            writer.writerow(header)
+        for row in rows:
+            writer.writerow(list(row))
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-        writer.writerow(header)
+        if include_header:
+            writer.writerow(header)
         for row in rows:
             writer.writerow(list(row))
+
+
+def output_region_values(region: InputRegion, values: Sequence[object], output_format: str) -> List[object]:
+    """Return input values normalized for the requested output format."""
+    if output_format != "bed":
+        return list(values)
+    original = list(values)
+    if len(original) >= 3 and str(original[0]) == region.chrom and str(original[1]) == str(region.start) and str(original[2]) == str(region.end):
+        original = original[3:]
+    elif original and str(original[0]) == region.region_name:
+        original = original[1:]
+    return [region.chrom, region.start, region.end] + original
+
+
+def output_region_header(header: Sequence[str], output_format: str) -> List[str]:
+    """Return a header normalized for BED output."""
+    if output_format != "bed":
+        return list(header)
+    if len(header) >= 3 and header[1].lower() in {"start", "chromstart"} and header[2].lower() in {"end", "chromend"}:
+        return ["chr", "start", "end"] + list(header[3:])
+    return ["chr", "start", "end"] + list(header[1:])

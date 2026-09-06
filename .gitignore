@@ -16,8 +16,10 @@
 !**/*.js
 !**/*.toml
 !**/*.yml
+!**/*.yaml
 !**/*.json
 !**/*.lock
+!tests_data/*.bed
 !**/.env*
 !**/Dockerfile
 !**/.gitignore

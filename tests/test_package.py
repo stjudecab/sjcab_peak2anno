@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,8 @@ from peak2anno.context import (
     annotate_narrow_context,
     annotate_peak_state,
 )
+from peak2anno.cli import build_parser, main
+from peak2anno.intervals import read_regions
 from peak2anno.peak2gene import PeakGeneConfig, annotate_peak2gene
 
 
@@ -146,6 +149,86 @@ def test_peak2gene_default_tss(tmp_path: Path, toy_db: Path) -> None:
     assert rows[3][-3:] == ["GeneC", "ENSGC", "950"]
 
 
+def test_peak2gene_finds_default_gene_bed(tmp_path: Path) -> None:
+    """peak2gene should find the default all.gene.bed database file."""
+    db = tmp_path / "db"
+    write(db / "toy" / "v2" / "all.gene.bed", "chr1\t90\t110\tGeneA\t.\t+\tENSGA\tTXA\n")
+    peaks = write(tmp_path / "peaks.bed", "chr1\t100\t101\tpeak1\n")
+    output = tmp_path / "output.tsv"
+
+    annotate_peak2gene(
+        PeakGeneConfig(
+            input_path=peaks,
+            output_path=output,
+            species="toy",
+            db_path=str(db),
+        )
+    )
+
+    rows = read_tsv(output)
+    assert rows[1][-3:] == ["GeneA", "ENSGA", "9"]
+
+
+def test_peak2gene_help_shows_short_options_and_defaults(capsys: pytest.CaptureFixture[str]) -> None:
+    """The peak2gene help should show concise options and their defaults."""
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["peak2gene", "--help"])
+    help_text = capsys.readouterr().out
+    assert "--ver" in help_text
+    assert "--iso" in help_text
+    assert "(default: hg38)" in help_text
+    assert "(default: def)" in help_text
+
+
+def test_cli_writes_stdout_and_run_log(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The CLI should stream output and record resolved references without -o."""
+    peaks = write(tmp_path / "peaks.bed", "chr1\t100\t101\tpeak1\n")
+    tss = write(tmp_path / "tss.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\n")
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["peak2gene", str(peaks), "--tss-bed", str(tss), "--promoter-cutoff", "100bp"]) == 0
+
+    assert "GeneA" in capsys.readouterr().out
+    run_log = (tmp_path / ".run.log").read_text(encoding="utf-8")
+    assert "command:" in run_log
+    assert "output: stdout" in run_log
+    assert str(tss.resolve()) in run_log
+
+
+def test_region_text_accepts_header_and_common_delimiters(tmp_path: Path) -> None:
+    """Text input should parse a header and non-colon region delimiters."""
+    path = write(tmp_path / "regions.txt", "region\nchr1^100=200\n")
+    header, regions = read_regions(path, input_format="txt")
+    assert header == ["region"]
+    assert (regions[0].chrom, regions[0].start, regions[0].end) == ("chr1", 100, 200)
+
+
+def test_loop2anno_merges_two_anchor_annotations(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """loop2anno should annotate both BEDPE anchors in one table."""
+    loops = write(tmp_path / "loops.bedpe", "chr1\t50\t150\tchr1\t300\t400\n")
+    tss = write(tmp_path / "tss.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\n")
+    monkeypatch.chdir(tmp_path)
+    assert main(["loop2anno", str(loops), "--tss-bed", str(tss), "--output-format", "txt"]) == 0
+    output = capsys.readouterr().out
+    assert "anchor1_Closest_Gene" in output
+    assert "anchor2_Closest_Gene" in output
+
+
+def test_combined_annotations_merge_columns(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The combined command should merge multiple annotation result blocks."""
+    peaks = write(tmp_path / "peaks.bed", "chr1\t50\t150\tpeak1\n")
+    tss = write(tmp_path / "tss.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\n")
+    context = make_context_dir(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert main([
+        "peak2gene", "narrow2context", str(peaks), "--tss-bed", str(tss),
+        "--context-dir", str(context), "--workers", "2", "--output-format", "txt",
+    ]) == 0
+    output = capsys.readouterr().out
+    assert "Closest_Gene" in output
+    assert "FeatureAssignment" in output
+
+
 def test_narrow_context_priority(tmp_path: Path, context_dir: Path) -> None:
     """narrow2context should assign the first priority feature that overlaps."""
     peaks = write(
@@ -171,6 +254,27 @@ def test_narrow_context_priority(tmp_path: Path, context_dir: Path) -> None:
     summary_rows = read_tsv(summary)
     assert summary_rows[0][4:7] == ["Promoter.Up", "Promoter.Down", "Exon"]
     assert summary_rows[1][4:7] == ["1", "0", "2"]
+
+
+def test_narrow_context_finds_context_dir_under_db_path(tmp_path: Path) -> None:
+    """Context commands should search the database root when no directory is given."""
+    context = make_context_dir(tmp_path)
+    db_context = tmp_path / "db" / "toy" / "context"
+    shutil.copytree(context, db_context)
+    peaks = write(tmp_path / "peaks.bed", "chr1\t0\t100\tp1\n")
+    output = tmp_path / "narrow.tsv"
+
+    annotate_narrow_context(
+        ContextConfig(
+            input_path=peaks,
+            output_path=output,
+            species="toy",
+            db_path=str(tmp_path / "db"),
+            overlap_cutoff="0.5",
+        )
+    )
+
+    assert read_tsv(output)[1][-1] == "Promoter.Up"
 
 
 def test_broad_context_reports_fractions(tmp_path: Path, context_dir: Path) -> None:

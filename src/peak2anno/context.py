@@ -14,6 +14,9 @@ from .intervals import (
     IntervalIndex,
     OverlapCutoff,
     overlap_bp,
+    output_region_values,
+    output_region_header,
+    detect_output_format,
     parse_overlap_cutoff,
     read_bed_records,
     read_regions,
@@ -48,7 +51,7 @@ class ContextConfig:
     """Configuration for narrow or broad genomic context annotation."""
 
     input_path: Path
-    output_path: Path
+    output_path: Optional[Path]
     species: str
     db_path: Optional[str] = None
     context_dir: Optional[Path] = None
@@ -59,6 +62,10 @@ class ContextConfig:
     column_name: str = "FeatureAssignment"
     summary_path: Optional[Path] = None
     plot: bool = False
+    input_format: str = "auto"
+    columns: Optional[Tuple[int, int, int]] = None
+    region_column: int = 0
+    output_format: str = "txt"
 
 
 @dataclass(frozen=True)
@@ -67,12 +74,16 @@ class StateConfig:
 
     input_path: Path
     states_path: Path
-    output_path: Path
+    output_path: Optional[Path]
     state2name: Optional[Path] = None
     overlap_cutoff: str = "1bp"
     header: str = "auto"
     summary_path: Optional[Path] = None
     plot: bool = False
+    input_format: str = "auto"
+    columns: Optional[Tuple[int, int, int]] = None
+    region_column: int = 0
+    output_format: str = "txt"
 
 
 def read_list_or_csv(value: str, base_dir: Optional[Path] = None) -> List[str]:
@@ -190,19 +201,27 @@ def write_count_summary(
 
 def annotate_narrow_context(config: ContextConfig) -> Tuple[Path, Path]:
     """Annotate each peak to one prioritized genomic context feature."""
-    header, regions = read_regions(config.input_path, header=config.header)
+    output_format = config.output_format if config.output_format != "auto" else detect_output_format(config.input_path, config.header, config.input_format, config.columns, config.region_column)
+    header, regions = read_regions(config.input_path, header=config.header, input_format=config.input_format, columns=config.columns, region_column=config.region_column)
     specs = resolve_features(config)
     indexes = feature_indexes(specs)
     cutoff = parse_overlap_cutoff(config.overlap_cutoff)
     assignments = [assign_priority(region, indexes, cutoff) for region in regions]
-    out_header = list(header) + [config.column_name]
-    rows = [list(region.values) + [assignment] for region, assignment in zip(regions, assignments)]
-    write_table(config.output_path, out_header, rows)
+    out_header = output_region_header(header, output_format) + [config.column_name]
+    rows = [output_region_values(region, region.values, output_format) + [assignment] for region, assignment in zip(regions, assignments)]
+    write_table(config.output_path, out_header, rows, include_header=output_format == "txt")
 
     counts = summarize_counts([spec.label for spec in specs], assignments)
-    summary = config.summary_path or config.output_path.with_suffix(config.output_path.suffix + ".summary.tsv")
-    write_count_summary(summary, config.input_path.name, counts, len(regions), config.overlap_cutoff)
+    summary = config.summary_path or (
+        config.output_path.with_suffix(config.output_path.suffix + ".summary.tsv")
+        if config.output_path is not None
+        else None
+    )
+    if summary is not None:
+        write_count_summary(summary, config.input_path.name, counts, len(regions), config.overlap_cutoff)
     if config.plot:
+        if summary is None:
+            raise ValueError("--plot requires --summary when --output is omitted")
         write_count_plots(counts, summary.with_suffix(""), f"Genomic context: {config.input_path.name}")
     return config.output_path, summary
 
@@ -250,15 +269,20 @@ def broad_rows(
 
 def annotate_broad_context(config: ContextConfig) -> Tuple[Path, Path]:
     """Annotate each peak with per-feature context overlap fractions."""
-    header, regions = read_regions(config.input_path, header=config.header)
+    output_format = config.output_format if config.output_format != "auto" else detect_output_format(config.input_path, config.header, config.input_format, config.columns, config.region_column)
+    header, regions = read_regions(config.input_path, header=config.header, input_format=config.input_format, columns=config.columns, region_column=config.region_column)
     specs = resolve_features(config)
     indexes = feature_indexes(specs)
     cutoff = parse_overlap_cutoff(config.overlap_cutoff)
     extra_header, extra_rows, primary_counts, bp_totals = broad_rows(regions, indexes, cutoff)
-    rows = [list(region.values) + extra for region, extra in zip(regions, extra_rows)]
-    write_table(config.output_path, list(header) + extra_header, rows)
+    rows = [output_region_values(region, region.values, output_format) + extra for region, extra in zip(regions, extra_rows)]
+    write_table(config.output_path, output_region_header(header, output_format) + extra_header, rows, include_header=output_format == "txt")
 
-    summary = config.summary_path or config.output_path.with_suffix(config.output_path.suffix + ".summary.tsv")
+    summary = config.summary_path or (
+        config.output_path.with_suffix(config.output_path.suffix + ".summary.tsv")
+        if config.output_path is not None
+        else None
+    )
     total_bp = sum(region.length for region in regions)
     summary_header = ["Feature", "PrimaryRegions", "OverlapBp", "OverlapFractionOfInputBp"]
     summary_rows = [
@@ -271,8 +295,11 @@ def annotate_broad_context(config: ContextConfig) -> Tuple[Path, Path]:
         for label in indexes.keys()
     ]
     summary_rows.append(["False", primary_counts.get("False", 0), 0, "0.000000"])
-    write_table(summary, summary_header, summary_rows)
+    if summary is not None:
+        write_table(summary, summary_header, summary_rows)
     if config.plot:
+        if summary is None:
+            raise ValueError("--plot requires --summary when --output is omitted")
         write_count_plots(primary_counts, summary.with_suffix(""), f"Broad genomic context: {config.input_path.name}")
     return config.output_path, summary
 
@@ -307,15 +334,20 @@ def load_state_index(states_path: Path, state_names: Mapping[str, str]) -> Order
 
 def annotate_peak_state(config: StateConfig) -> Tuple[Path, Path]:
     """Annotate peaks with chromatin-state overlap fractions."""
-    header, regions = read_regions(config.input_path, header=config.header)
+    output_format = config.output_format if config.output_format != "auto" else detect_output_format(config.input_path, config.header, config.input_format, config.columns, config.region_column)
+    header, regions = read_regions(config.input_path, header=config.header, input_format=config.input_format, columns=config.columns, region_column=config.region_column)
     state_names = read_state_names(config.state2name)
     indexes = load_state_index(config.states_path, state_names)
     cutoff = parse_overlap_cutoff(config.overlap_cutoff)
     extra_header, extra_rows, primary_counts, bp_totals = broad_rows(regions, indexes, cutoff)
-    rows = [list(region.values) + extra for region, extra in zip(regions, extra_rows)]
-    write_table(config.output_path, list(header) + extra_header, rows)
+    rows = [output_region_values(region, region.values, output_format) + extra for region, extra in zip(regions, extra_rows)]
+    write_table(config.output_path, output_region_header(header, output_format) + extra_header, rows, include_header=output_format == "txt")
 
-    summary = config.summary_path or config.output_path.with_suffix(config.output_path.suffix + ".summary.tsv")
+    summary = config.summary_path or (
+        config.output_path.with_suffix(config.output_path.suffix + ".summary.tsv")
+        if config.output_path is not None
+        else None
+    )
     total_bp = sum(region.length for region in regions)
     summary_header = ["State", "PrimaryRegions", "OverlapBp", "OverlapFractionOfInputBp"]
     summary_rows = [
@@ -328,7 +360,10 @@ def annotate_peak_state(config: StateConfig) -> Tuple[Path, Path]:
         for label in indexes.keys()
     ]
     summary_rows.append(["False", primary_counts.get("False", 0), 0, "0.000000"])
-    write_table(summary, summary_header, summary_rows)
+    if summary is not None:
+        write_table(summary, summary_header, summary_rows)
     if config.plot:
+        if summary is None:
+            raise ValueError("--plot requires --summary when --output is omitted")
         write_count_plots(primary_counts, summary.with_suffix(""), f"Peak state context: {config.input_path.name}")
     return config.output_path, summary

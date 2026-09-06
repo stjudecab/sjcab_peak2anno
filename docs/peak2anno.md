@@ -29,6 +29,13 @@ The local DB manifest currently marks these defaults:
 - `hg19`: `v31lift37`
 - `sacCer3`: `R64-1-1`
 
+For `peak2gene`, the database is searched under the selected species and
+version for `all.gene.bed` by default, or `deduplong.gene.bed` with
+`--iso deduplong`. The version defaults to `def`, which selects the database
+manifest default (or the only available version). Use `--ver` to select a
+specific version; `--species-version` and `--isoform-version` remain accepted
+as longer aliases. Explicit `--tss-bed` or `--gene-bed` overrides discovery.
+
 ## Commands
 
 ```bash

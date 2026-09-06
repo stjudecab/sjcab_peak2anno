@@ -110,6 +110,82 @@ def annotation_path(
     return path
 
 
+def gene_annotation_path(
+    species: str,
+    version: str = "def",
+    isoform_set: str = "all",
+    root_path: Optional[str] = None,
+) -> Path:
+    """Find the gene BED for a species, version, and isoform set.
+
+    The preferred database layout is ``<root>/<species>/<version>/`` with
+    either ``all.gene.bed`` or ``deduplong.gene.bed``. Manifest paths and the
+    older ``<root>/<species>/{tss,deduplong>/<version>.bed`` layout are also
+    supported.
+    """
+    if isoform_set not in {"all", "deduplong"}:
+        raise ValueError("isoform set must be one of: all, deduplong")
+    root = db_root(root_path)
+    filename = f"{isoform_set}.gene.bed"
+    manifest = load_manifest(root)
+    resources = manifest_resources(manifest)
+
+    if version in {"default", "def"}:
+        for item in resources:
+            item_path = str(item.get("path", ""))
+            annotation = str(item.get("annotation", ""))
+            if (
+                item.get("species") == species
+                and item.get("default") is True
+                and (annotation in {isoform_set, f"{isoform_set}.gene", "gene"}
+                     or (isoform_set == "all" and annotation == "tss")
+                     or item_path.endswith(filename))
+            ):
+                version = str(item.get("version", "default"))
+                break
+        else:
+            version_candidates = sorted(
+                path.parent.name
+                for path in (root / species).glob(f"*/{filename}")
+            )
+            if len(version_candidates) == 1:
+                version = version_candidates[0]
+            elif not version_candidates:
+                version = "default"
+            else:
+                raise FileNotFoundError(
+                    f"No default gene BED version for {species}; choose one with --ver"
+                )
+
+    for item in resources:
+        if item.get("species") != species or str(item.get("version")) != version:
+            continue
+        item_path = item.get("path")
+        if item_path and (
+            str(item.get("annotation", "")) in {isoform_set, f"{isoform_set}.gene", "gene"}
+            or (isoform_set == "all" and str(item.get("annotation", "")) == "tss")
+            or str(item_path).endswith(filename)
+        ):
+            path = root / str(item_path)
+            if path.is_file():
+                return path
+
+    candidates = [
+        root / species / version / filename,
+        root / species / f"{version}.{isoform_set}.gene.bed",
+        root / species / isoform_set / f"{version}.gene.bed",
+    ]
+    # Compatibility with the original database package layout.
+    candidates.append(root / species / ("tss" if isoform_set == "all" else "deduplong") / f"{version}.bed")
+    for path in candidates:
+        if path.is_file():
+            return path
+    searched = ", ".join(str(path) for path in candidates)
+    raise FileNotFoundError(
+        f"Missing {filename} for {species} version {version} under {root}; searched: {searched}"
+    )
+
+
 def available_versions(root_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """Return available database annotations from the manifest or filesystem."""
     root = db_root(root_path)
@@ -139,10 +215,14 @@ def candidate_context_dirs(species: str, root_path: Optional[str] = None) -> Lis
     root = db_root(root_path)
     package_root = Path(__file__).resolve().parents[2]
     cwd = Path.cwd()
-    return [
+    candidates = [
         root / species / "context",
         root / species / "features",
         root / species,
-        cwd / "annotations" / species,
-        package_root / "annotations" / species,
     ]
+    species_root = root / species
+    if species_root.is_dir():
+        for version_root in sorted(path for path in species_root.iterdir() if path.is_dir()):
+            candidates.extend([version_root / "context", version_root / "features", version_root])
+    candidates.extend([cwd / "annotations" / species, package_root / "annotations" / species])
+    return candidates

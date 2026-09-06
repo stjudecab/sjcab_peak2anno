@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
 
-from .db import annotation_path
+from .db import gene_annotation_path
 from .intervals import (
     BedRecord,
     InputRegion,
@@ -14,6 +14,9 @@ from .intervals import (
     distance_bp,
     format_distance,
     parse_distance,
+    output_region_values,
+    output_region_header,
+    detect_output_format,
     read_bed_records,
     read_regions,
     unique_join,
@@ -26,7 +29,7 @@ class PeakGeneConfig:
     """Configuration for peak-to-gene annotation."""
 
     input_path: Path
-    output_path: Path
+    output_path: Optional[Path]
     species: str
     species_version: str = "default"
     isoform_version: str = "all"
@@ -37,33 +40,34 @@ class PeakGeneConfig:
     gene_bed: Optional[Path] = None
     tss_bed: Optional[Path] = None
     header: str = "auto"
+    input_format: str = "auto"
+    columns: Optional[Tuple[int, int, int]] = None
+    region_column: int = 0
+    output_format: str = "txt"
 
 
 def resolve_tss_records(config: PeakGeneConfig) -> List[BedRecord]:
     """Load TSS records for peak-to-gene annotation."""
     if config.tss_bed is not None and config.gene_bed is not None:
         raise ValueError("Use either --tss-bed or --gene-bed, not both")
+    path = resolve_tss_path(config)
+    return read_bed_records(path, gene_type=config.gene_type, as_tss=config.tss_bed is None)
+
+
+def resolve_tss_path(config: PeakGeneConfig) -> Path:
+    """Resolve the gene/TSS reference path used by a peak2gene run."""
+    if config.tss_bed is not None and config.gene_bed is not None:
+        raise ValueError("Use either --tss-bed or --gene-bed, not both")
     if config.tss_bed is not None:
-        return read_bed_records(config.tss_bed, gene_type=config.gene_type, as_tss=False)
+        return config.tss_bed
     if config.gene_bed is not None:
-        return read_bed_records(config.gene_bed, gene_type=config.gene_type, as_tss=True)
-    if config.isoform_version == "all":
-        path = annotation_path(
-            config.species,
-            version=config.species_version,
-            annotation="tss",
-            root_path=config.db_path,
-        )
-        return read_bed_records(path, gene_type=config.gene_type, as_tss=False)
-    if config.isoform_version == "deduplong":
-        path = annotation_path(
-            config.species,
-            version=config.species_version,
-            annotation="deduplong",
-            root_path=config.db_path,
-        )
-        return read_bed_records(path, gene_type=config.gene_type, as_tss=True)
-    raise ValueError("--isoform-version must be one of: all, deduplong")
+        return config.gene_bed
+    return gene_annotation_path(
+        config.species,
+        version=config.species_version,
+        isoform_set=config.isoform_version,
+        root_path=config.db_path,
+    )
 
 
 def nearby_records(
@@ -124,7 +128,16 @@ def annotate_peak2gene(config: PeakGeneConfig) -> Path:
     enhancer_bp = parse_distance(config.enhancer_cutoff)
     if enhancer_bp < promoter_bp:
         raise ValueError("--enhancer-cutoff must be greater than or equal to --promoter-cutoff")
-    header, regions = read_regions(config.input_path, header=config.header)
+    output_format = config.output_format if config.output_format != "auto" else detect_output_format(
+        config.input_path, config.header, config.input_format, config.columns, config.region_column
+    )
+    header, regions = read_regions(
+        config.input_path,
+        header=config.header,
+        input_format=config.input_format,
+        columns=config.columns,
+        region_column=config.region_column,
+    )
     tss_records = resolve_tss_records(config)
     index = IntervalIndex(tss_records)
 
@@ -136,7 +149,7 @@ def annotate_peak2gene(config: PeakGeneConfig) -> Path:
     elif promoter_label.endswith("Mb") and enhancer_label.endswith("Mb"):
         distal_label = f"{promoter_label[:-2]}-{enhancer_label}"
 
-    out_header = list(header) + [
+    out_header = output_region_header(header, output_format) + [
         f"Gene_{promoter_label}",
         "Gencode_ids",
         f"Gene_{distal_label}",
@@ -154,7 +167,7 @@ def annotate_peak2gene(config: PeakGeneConfig) -> Path:
         distal_names, distal_ids = names_and_ids(record for record, _ in distal)
         closest, distance = closest_record(index, region)
         rows.append(
-            list(region.values)
+            output_region_values(region, region.values, output_format)
             + [
                 promoter_names,
                 promoter_ids,
@@ -165,6 +178,5 @@ def annotate_peak2gene(config: PeakGeneConfig) -> Path:
                 distance if distance is not None else ".",
             ]
         )
-    write_table(config.output_path, out_header, rows)
+    write_table(config.output_path, out_header, rows, include_header=output_format == "txt")
     return config.output_path
-
