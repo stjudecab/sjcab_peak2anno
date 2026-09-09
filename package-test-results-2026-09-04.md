@@ -375,3 +375,25 @@ FAILED tests/test_package.py::test_peak2state_reports_named_states - Attribut...
 
 ...........                                                              [100%]
 11 passed in 0.09s
+
+## 2026-09-07 — missing-reference installation prompt
+
+Command:
+
+```bash
+PYTHONPATH=src /research/rgs01/home/clusterHome/bxu2/.micromamba/bin/python -m pytest -q
+```
+
+Result:
+
+```text
+.............                                                            [100%]
+13 passed in 0.10s
+
+Verification rerun after Python 3.7-compatible command quoting:
+
+```text
+.............                                                            [100%]
+13 passed in 0.12s
+```
+```

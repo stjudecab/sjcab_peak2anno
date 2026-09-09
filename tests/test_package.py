@@ -5,6 +5,8 @@ from __future__ import annotations
 import csv
 import json
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -178,6 +180,44 @@ def test_peak2gene_help_shows_short_options_and_defaults(capsys: pytest.CaptureF
     assert "--iso" in help_text
     assert "(default: hg38)" in help_text
     assert "(default: def)" in help_text
+
+
+def test_missing_database_reference_can_be_declined(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing selected reference should ask before running the installer."""
+    peaks = write(tmp_path / "peaks.bed", "chr1\t100\t101\tpeak1\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", type("TTY", (), {"isatty": lambda self: True})())
+    monkeypatch.setattr("builtins.input", lambda _prompt: "no")
+
+    with pytest.raises(SystemExit):
+        main(["peak2gene", str(peaks), "-s", "missing", "--ver", "v9", "-d", str(tmp_path / "db")])
+
+    error = capsys.readouterr().err
+    assert "sjcab-peak2anno-db download-bed missing v9" in error
+    assert "installation declined" in error
+
+
+def test_missing_database_reference_can_be_installed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A yes response should run the proposed installer and retry the command."""
+    peaks = write(tmp_path / "peaks.bed", "chr1\t100\t101\tpeak1\n")
+    db = tmp_path / "db"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", type("TTY", (), {"isatty": lambda self: True})())
+    monkeypatch.setattr("builtins.input", lambda _prompt: "yes")
+
+    def fake_install(command: list[str], check: bool) -> subprocess.CompletedProcess[str]:
+        assert check is True
+        assert command[:4] == ["sjcab-peak2anno-db", "download-bed", "missing", "v9"]
+        write(db / "missing" / "v9" / "all.gene.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\n")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr("peak2anno.cli.subprocess.run", fake_install)
+    assert main(["peak2gene", str(peaks), "-s", "missing", "--ver", "v9", "-d", str(db)]) == 0
+    assert "GeneA" in capsys.readouterr().out
 
 
 def test_cli_writes_stdout_and_run_log(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:

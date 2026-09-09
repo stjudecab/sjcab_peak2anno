@@ -232,3 +232,15 @@ from `--db-path`, `$SJCAB_PEAK2ANNO_DB_PATH`, or
 standard context files such as `2kb.promoter.up.bed` and `2kb.exon.bed` under
 `<db>/<species>/context`, `<db>/<species>/features`, or a versioned species
 directory. Use `-c/--context-dir` to override this lookup.
+
+## Missing database references
+
+If the selected `--species`/`--ver` reference is not available, the command
+prints the exact `sjcab-peak2anno-db` command it proposes and asks:
+`Install database files now? [y/N]:` Type `y` or `yes` to run it and retry the
+annotation; any other answer leaves the run unchanged. For the default version,
+the proposal is `sjcab-peak2anno-db install-bed`; for an explicit version it is
+`sjcab-peak2anno-db download-bed SPECIES VERSION`. Context commands propose
+`sjcab-peak2anno-db install gencode-feature`. An explicit `--tss-bed`,
+`--gene-bed`, or `--context-dir` is never replaced automatically. In a pipe or
+other non-interactive session installation is declined safely.
