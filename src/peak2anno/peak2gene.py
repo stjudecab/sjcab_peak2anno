@@ -33,8 +33,7 @@ class PeakGeneConfig:
     species: str
     species_version: str = "default"
     isoform_version: str = "all"
-    promoter_cutoff: str = "2kb"
-    enhancer_cutoff: str = "50kb"
+    prom_enha_cutoffs: str = "2kb,50kb,2kb"
     gene_type: str = "all"
     db_path: Optional[str] = None
     gene_bed: Optional[Path] = None
@@ -73,18 +72,97 @@ def resolve_tss_path(config: PeakGeneConfig) -> Path:
 def nearby_records(
     index: IntervalIndex,
     region: InputRegion,
-    cutoff_bp: int,
+    cutoff_bp: object,
 ) -> List[Tuple[BedRecord, int]]:
     """Return TSS records within a distance cutoff of a peak."""
-    query_start = max(0, region.start - cutoff_bp)
-    query_end = region.end + cutoff_bp
     matches: List[Tuple[BedRecord, int]] = []
-    for record in index.query(region.chrom, query_start, query_end):
+    for record in index.records_for_chrom(region.chrom):
         dist = distance_bp(region.start, region.end, record.start, record.end)
-        if dist <= cutoff_bp:
+        if dist <= cutoff_value(cutoff_bp, record):
             matches.append((record, dist))
     matches.sort(key=lambda item: (item[1], item[0].start, item[0].name, item[0].gene_id))
     return matches
+
+
+def promoter_records(
+    index: IntervalIndex,
+    region: InputRegion,
+    upstream_bp: object,
+    downstream_bp: object,
+) -> List[BedRecord]:
+    """Return records in strand-aware upstream/downstream promoter windows."""
+    matches: List[Tuple[BedRecord, int]] = []
+    for record in index.records_for_chrom(region.chrom):
+        if region.end <= record.start:
+            distance = record.start - region.end
+            side = "left"
+        elif region.start >= record.end:
+            distance = region.start - record.end
+            side = "right"
+        else:
+            distance = 0
+            side = "overlap"
+        upstream = cutoff_value(upstream_bp, record)
+        downstream = cutoff_value(downstream_bp, record)
+        if side == "overlap":
+            allowed = max(upstream, downstream)
+        elif record.strand == "+":
+            allowed = upstream if side == "left" else downstream
+        elif record.strand == "-":
+            allowed = downstream if side == "left" else upstream
+        else:
+            allowed = max(upstream, downstream)
+        if distance <= allowed:
+            matches.append((record, distance))
+    matches.sort(key=lambda item: (item[1], item[0].start, item[0].name, item[0].gene_id))
+    return [record for record, _distance in matches]
+
+
+def format_promoter_label(upstream_bp: int, downstream_bp: int) -> str:
+    """Format the promoter range for output column names."""
+    upstream = format_distance(upstream_bp)
+    downstream = format_distance(downstream_bp)
+    if upstream == downstream:
+        return upstream
+    return f"{upstream}up_{downstream}down"
+
+
+def parse_prom_enha_cutoffs(value: str) -> Tuple[str, str, str]:
+    """Parse promoter-up, enhancer, and optional promoter-down cutoffs."""
+    values = [item.strip() for item in value.split(",")]
+    if len(values) == 2:
+        values.append(values[0])
+    if len(values) != 3 or any(not item for item in values):
+        raise ValueError("--prom-enha-cutoffs must be promoterup,enhancer[,promoterdown]")
+    return values[0], values[1], values[2]
+
+
+def cutoff_value(value: object, record: BedRecord) -> int:
+    """Resolve a fixed, gene-relative, or transcript-relative cutoff."""
+    text = str(value).strip()
+    lowered = text.lower()
+    if lowered.startswith("gene"):
+        fraction = float(text[4:])
+        length = (record.source_end - record.source_start) if record.source_start is not None and record.source_end is not None else record.length
+        return int(length * fraction)
+    if lowered.startswith("transcript"):
+        multiplier = float(text[10:])
+        if len(record.fields) <= 4:
+            raise ValueError(f"{text!r} requires BED column 5 transcript length")
+        try:
+            transcript_length = int(float(record.fields[4]))
+        except ValueError as exc:
+            raise ValueError(f"{text!r} requires numeric BED column 5 transcript length") from exc
+        return int(transcript_length * multiplier)
+    return parse_distance(text)
+
+
+def cutoff_label(value: str) -> str:
+    """Format a cutoff for output column names."""
+    try:
+        return format_distance(parse_distance(value))
+    except ValueError:
+        return value.replace(".", "p")
 
 
 def closest_record(index: IntervalIndex, region: InputRegion) -> Tuple[Optional[BedRecord], Optional[int]]:
@@ -124,10 +202,7 @@ def annotate_peak2gene(config: PeakGeneConfig) -> Path:
     Returns:
         Path: Output TSV path.
     """
-    promoter_bp = parse_distance(config.promoter_cutoff)
-    enhancer_bp = parse_distance(config.enhancer_cutoff)
-    if enhancer_bp < promoter_bp:
-        raise ValueError("--enhancer-cutoff must be greater than or equal to --promoter-cutoff")
+    upstream_cutoff, enhancer_cutoff, downstream_cutoff = parse_prom_enha_cutoffs(config.prom_enha_cutoffs)
     output_format = config.output_format if config.output_format != "auto" else detect_output_format(
         config.input_path, config.header, config.input_format, config.columns, config.region_column
     )
@@ -141,8 +216,10 @@ def annotate_peak2gene(config: PeakGeneConfig) -> Path:
     tss_records = resolve_tss_records(config)
     index = IntervalIndex(tss_records)
 
-    promoter_label = format_distance(promoter_bp)
-    enhancer_label = format_distance(enhancer_bp)
+    promoter_label = f"{cutoff_label(upstream_cutoff)}up_{cutoff_label(downstream_cutoff)}down"
+    if upstream_cutoff == downstream_cutoff:
+        promoter_label = cutoff_label(upstream_cutoff)
+    enhancer_label = cutoff_label(enhancer_cutoff)
     distal_label = f"{promoter_label}-{enhancer_label}"
     if promoter_label.endswith("kb") and enhancer_label.endswith("kb"):
         distal_label = f"{promoter_label[:-2]}-{enhancer_label}"
@@ -160,10 +237,11 @@ def annotate_peak2gene(config: PeakGeneConfig) -> Path:
     ]
     rows: List[Sequence[object]] = []
     for region in regions:
-        promoter = nearby_records(index, region, promoter_bp)
-        outer = nearby_records(index, region, enhancer_bp)
-        distal = [(record, dist) for record, dist in outer if dist > promoter_bp]
-        promoter_names, promoter_ids = names_and_ids(record for record, _ in promoter)
+        promoter_records_for_region = promoter_records(index, region, upstream_cutoff, downstream_cutoff)
+        outer = nearby_records(index, region, enhancer_cutoff)
+        promoter_set = set(promoter_records_for_region)
+        distal = [(record, dist) for record, dist in outer if record not in promoter_set]
+        promoter_names, promoter_ids = names_and_ids(promoter_records_for_region)
         distal_names, distal_ids = names_and_ids(record for record, _ in distal)
         closest, distance = closest_record(index, region)
         rows.append(

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-10
+
+- Added separate strand-aware upstream/downstream promoter cutoffs for gene annotation.
+- Added rc-file and environment configuration for database, species versions, and gene cutoffs.
+- Added rc-file and environment defaults for gene type and isoform set.
+- Added configurable max/percent output modes for feature and state annotations.
+- Renamed `loop2anno` to `loop2gene` and replaced legacy gene cutoff options with `--prom-enha-cutoffs`.
+
 ## 2026-09-04
 
 - Renamed the distribution to `sjcab_peak2anno`.
@@ -10,6 +18,6 @@
 ## 2026-07-14
 
 - Added the `peak2anno` Python package scaffold with `peak2anno` and `sjcab_peak2anno` console entry points.
-- Added `peak2gene`, `narrow2context`, `broad2context`, `peak2state`, and `list-db` subcommands.
+- Added `peak2gene`, `narrow2feature`, `broad2feature`, `peak2state`, and `list-db` subcommands.
 - Added a noarch conda recipe depending on `sjcab_peak2anno_db`.
 - Added package documentation and offline unit tests for toy BED/database inputs.

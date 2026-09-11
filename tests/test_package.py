@@ -19,8 +19,9 @@ from peak2anno.context import (
     annotate_peak_state,
 )
 from peak2anno.cli import build_parser, main
+from peak2anno.config import load_settings
 from peak2anno.intervals import read_regions
-from peak2anno.peak2gene import PeakGeneConfig, annotate_peak2gene
+from peak2anno.peak2gene import PeakGeneConfig, annotate_peak2gene, promoter_records
 
 
 def write(path: Path, text: str) -> Path:
@@ -132,8 +133,7 @@ def test_peak2gene_default_tss(tmp_path: Path, toy_db: Path) -> None:
             output_path=out,
             species="toy",
             db_path=str(toy_db),
-            promoter_cutoff="100bp",
-            enhancer_cutoff="3000bp",
+            prom_enha_cutoffs="100bp,3000bp",
         )
     )
     rows = read_tsv(out)
@@ -179,7 +179,73 @@ def test_peak2gene_help_shows_short_options_and_defaults(capsys: pytest.CaptureF
     assert "--ver" in help_text
     assert "--iso" in help_text
     assert "(default: hg38)" in help_text
-    assert "(default: def)" in help_text
+    assert "(default: v31)" in help_text
+    assert "--prom-enha-cutoffs" in help_text
+    assert "(default: 2kb,50kb,2kb)" in help_text
+
+
+def test_rc_settings_are_overridden_by_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The selected rc file supplies defaults and same-name environment values win."""
+    rc = write(
+        tmp_path / "settings.rc",
+        "\n".join(
+            [
+                "SJCAB_PEAK2ANNO_SPECIES_VERSIONS=mm10:vM22",
+                "SJCAB_PEAK2ANNO_PROM_ENHA_CUTOFFS=111bp,333bp,222bp",
+                "SJCAB_PEAK2ANNO_GENE_TYPE=nomicro",
+                "SJCAB_PEAK2ANNO_ISO_SET=deduplong",
+                "SJCAB_PEAK2ANNO_2FEATURE_OUT=percent,max",
+                "SJCAB_PEAK2ANNO_2STATE_OUT=max",
+            ]
+        )
+        + "\n",
+    )
+    monkeypatch.setenv("SJCAB_PEAK2ANNO_CONFIG", str(rc))
+    monkeypatch.setenv("SJCAB_PEAK2ANNO_PROM_ENHA_CUTOFFS_hg38_v31", "gene0.5,transcript2")
+    settings = load_settings()
+    assert settings.default_species == "mm10"
+    assert settings.version_for("mm10") == "vM22"
+    assert settings.prom_enha_cutoffs == "111bp,333bp,222bp"
+    assert settings.prom_enha_cutoffs_for("hg38", "v31") == "gene0.5,transcript2"
+    assert settings.gene_type == "nomicro"
+    assert settings.iso_set == "deduplong"
+    assert settings.feature_out == "percent,max"
+    assert settings.state_out == "max"
+
+
+def test_feature_percent_mode_uses_order_list(tmp_path: Path) -> None:
+    """Feature percentages should partition overlap in order-list order."""
+    context = make_context_dir(tmp_path)
+    write(context / "order.lst", "exon\npromoter.up\npromoter.down\nintron\ntes\ndis5\ndis3\nintergenic\n")
+    peaks = write(tmp_path / "peaks.bed", "chr1\t0\t200\tp1\n")
+    output = tmp_path / "features.tsv"
+    annotate_narrow_context(
+        ContextConfig(
+            input_path=peaks,
+            output_path=output,
+            species="toy",
+            context_dir=context,
+            output_format="txt",
+            output_mode="percent",
+        )
+    )
+    rows = read_tsv(output)
+    assert rows[0][-8:-5] == ["Exon_percent", "Promoter.Up_percent", "Promoter.Down_percent"]
+    assert rows[1][-8:-5] == ["75.000000", "25.000000", "0.000000"]
+
+
+def test_promoter_cutoffs_are_strand_aware() -> None:
+    """Upstream/downstream promoter windows should follow the gene strand."""
+    from peak2anno.intervals import BedRecord, InputRegion, IntervalIndex
+
+    records = [
+        BedRecord("chr1", 100, 101, ("chr1", "100", "101", "plus", ".", "+")),
+        BedRecord("chr1", 300, 301, ("chr1", "300", "301", "minus", ".", "-")),
+    ]
+    index = IntervalIndex(records)
+    assert [record.name for record in promoter_records(index, InputRegion("chr1", 0, 50, ()), 60, 10)] == ["plus"]
+    assert promoter_records(index, InputRegion("chr1", 150, 200, ()), 60, 10) == []
+    assert [record.name for record in promoter_records(index, InputRegion("chr1", 350, 400, ()), 60, 10)] == ["minus"]
 
 
 def test_missing_database_reference_can_be_declined(
@@ -226,7 +292,7 @@ def test_cli_writes_stdout_and_run_log(tmp_path: Path, capsys: pytest.CaptureFix
     tss = write(tmp_path / "tss.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\n")
     monkeypatch.chdir(tmp_path)
 
-    assert main(["peak2gene", str(peaks), "--tss-bed", str(tss), "--promoter-cutoff", "100bp"]) == 0
+    assert main(["peak2gene", str(peaks), "--tss-bed", str(tss), "--prom-enha-cutoffs", "100bp,3kb"]) == 0
 
     assert "GeneA" in capsys.readouterr().out
     run_log = (tmp_path / ".run.log").read_text(encoding="utf-8")
@@ -243,12 +309,12 @@ def test_region_text_accepts_header_and_common_delimiters(tmp_path: Path) -> Non
     assert (regions[0].chrom, regions[0].start, regions[0].end) == ("chr1", 100, 200)
 
 
-def test_loop2anno_merges_two_anchor_annotations(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
-    """loop2anno should annotate both BEDPE anchors in one table."""
+def test_loop2gene_merges_two_anchor_annotations(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """loop2gene should annotate both BEDPE anchors in one table."""
     loops = write(tmp_path / "loops.bedpe", "chr1\t50\t150\tchr1\t300\t400\n")
     tss = write(tmp_path / "tss.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\n")
     monkeypatch.chdir(tmp_path)
-    assert main(["loop2anno", str(loops), "--tss-bed", str(tss), "--output-format", "txt"]) == 0
+    assert main(["loop2gene", str(loops), "--tss-bed", str(tss), "--output-format", "txt"]) == 0
     output = capsys.readouterr().out
     assert "anchor1_Closest_Gene" in output
     assert "anchor2_Closest_Gene" in output
@@ -261,7 +327,7 @@ def test_combined_annotations_merge_columns(tmp_path: Path, capsys: pytest.Captu
     context = make_context_dir(tmp_path)
     monkeypatch.chdir(tmp_path)
     assert main([
-        "peak2gene", "narrow2context", str(peaks), "--tss-bed", str(tss),
+        "peak2gene", "narrow2feature", str(peaks), "--tss-bed", str(tss),
         "--context-dir", str(context), "--workers", "2", "--output-format", "txt",
     ]) == 0
     output = capsys.readouterr().out
@@ -270,7 +336,7 @@ def test_combined_annotations_merge_columns(tmp_path: Path, capsys: pytest.Captu
 
 
 def test_narrow_context_priority(tmp_path: Path, context_dir: Path) -> None:
-    """narrow2context should assign the first priority feature that overlaps."""
+    """narrow2feature should assign the first priority feature that overlaps."""
     peaks = write(
         tmp_path / "peaks.bed",
         "chr1\t0\t100\tp1\nchr1\t100\t200\tp2\nchr1\t200\t300\tp3\n",
@@ -318,7 +384,7 @@ def test_narrow_context_finds_context_dir_under_db_path(tmp_path: Path) -> None:
 
 
 def test_broad_context_reports_fractions(tmp_path: Path, context_dir: Path) -> None:
-    """broad2context should report per-feature fractions instead of priority-only labels."""
+    """broad2feature should report per-feature fractions instead of priority-only labels."""
     peaks = write(tmp_path / "peaks.bed", "chr1\t0\t100\tp1\n")
     out = tmp_path / "broad.tsv"
     output, summary = annotate_broad_context(

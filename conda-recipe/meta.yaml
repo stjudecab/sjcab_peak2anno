@@ -1,5 +1,5 @@
 {% set name = "sjcab_peak2anno" %}
-{% set version = "0.1.0" %}
+{% set version = "0.1.7" %}
 
 package:
   name: {{ name|lower }}
@@ -25,7 +25,7 @@ requirements:
     - wheel
   run:
     - python >=3.7
-    - stjudecab::sjcab_peak2anno_db ==0.1.5
+    - stjudecab::sjcab_peak2anno_db ==0.1.7
     - bedtools >2.16.2
     - pybedtools
 
@@ -39,11 +39,14 @@ test:
     - peak2anno list-db --db-path "$SJCAB_PEAK2ANNO_DB_PATH" || true
 
 about:
-  home: https://github.com/stjudecab/peak2anno
+  home: https://github.com/stjudecab/sjcab_peak2anno
+  dev_url: https://github.com/stjudecab/sjcab_peak2anno
+  doc_url: https://github.com/stjudecab/sjcab_peak2anno/blob/main/README.md
+  issue_url: https://github.com/stjudecab/sjcab_peak2anno/issues
   license: Apache-2.0
   summary: Annotate genomic peaks to genes, genomic contexts, and chromatin states.
   description: |
-    peak2anno provides the peak2gene, narrow2context, broad2context,
+    peak2anno provides the peak2gene, narrow2feature, broad2feature,
     and peak2state commands. Runtime annotation BED files are resolved from
     sjcab_peak2anno_db, typically installed from the stjudecab conda channel.
 

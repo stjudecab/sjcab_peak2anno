@@ -5,10 +5,10 @@ from __future__ import annotations
 import csv
 import tempfile
 from pathlib import Path
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from .context import ContextConfig, StateConfig, annotate_broad_context, annotate_narrow_context, annotate_peak_state
-from .intervals import InputRegion, read_regions, split_fields, write_table
+from .intervals import InputRegion, split_fields, write_table
 from .peak2gene import PeakGeneConfig, annotate_peak2gene
 
 
@@ -89,13 +89,13 @@ def annotate_loop(
             anchor_input = temp_root / f"anchor{side}.bed"
             anchor_output = temp_root / f"anchor{side}.tsv"
             _write_anchor(anchor_input, rows, side)
-            if command == "loop2anno":
-                annotate_peak2gene(PeakGeneConfig(input_path=anchor_input, output_path=anchor_output, species=str(kwargs["species"]), species_version=str(kwargs["species_version"]), isoform_version=str(kwargs["isoform_version"]), db_path=kwargs.get("db_path"), tss_bed=kwargs.get("tss_bed"), gene_bed=kwargs.get("gene_bed"), output_format="txt"))
-            elif command == "loop2context":
-                config = ContextConfig(input_path=anchor_input, output_path=anchor_output, species=str(kwargs["species"]), db_path=kwargs.get("db_path"), context_dir=kwargs.get("context_dir"), overlap_cutoff=str(kwargs["overlap_cutoff"]), output_format="txt")
+            if command == "loop2gene":
+                annotate_peak2gene(PeakGeneConfig(input_path=anchor_input, output_path=anchor_output, species=str(kwargs["species"]), species_version=str(kwargs["species_version"]), isoform_version=str(kwargs["isoform_version"]), prom_enha_cutoffs=str(kwargs.get("prom_enha_cutoffs", "2kb,50kb,2kb")), gene_type=str(kwargs.get("gene_type", "all")), db_path=kwargs.get("db_path"), tss_bed=kwargs.get("tss_bed"), gene_bed=kwargs.get("gene_bed"), output_format="txt"))
+            elif command == "loop2feature":
+                config = ContextConfig(input_path=anchor_input, output_path=anchor_output, species=str(kwargs["species"]), db_path=kwargs.get("db_path"), context_dir=kwargs.get("context_dir"), overlap_cutoff=str(kwargs["overlap_cutoff"]), output_mode=str(kwargs.get("output_mode", "legacy")), output_format="txt")
                 (annotate_broad_context if kwargs.get("context_mode") == "broad" else annotate_narrow_context)(config)
             elif command == "loop2state":
-                annotate_peak_state(StateConfig(input_path=anchor_input, output_path=anchor_output, states_path=Path(str(kwargs["states"])), state2name=kwargs.get("state2name"), overlap_cutoff=str(kwargs["overlap_cutoff"]), output_format="txt"))
+                annotate_peak_state(StateConfig(input_path=anchor_input, output_path=anchor_output, states_path=Path(str(kwargs["states"])), state2name=kwargs.get("state2name"), overlap_cutoff=str(kwargs["overlap_cutoff"]), output_mode=str(kwargs.get("output_mode", "legacy")), output_format="txt"))
             else:
                 raise ValueError(f"Unknown loop command: {command}")
             anchor_outputs.append(_read_table(anchor_output))

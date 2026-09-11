@@ -29,6 +29,8 @@ class BedRecord:
     start: int
     end: int
     fields: Tuple[str, ...]
+    source_start: Optional[int] = None
+    source_end: Optional[int] = None
 
     @property
     def length(self) -> int:
@@ -393,7 +395,16 @@ def read_bed_records(
             if end < start:
                 raise ValueError(f"End before start at {path}:{line_number}")
             tfields = tuple([fields[0], str(start), str(end)] + fields[3:])
-            records.append(BedRecord(chrom=fields[0], start=start, end=end, fields=tfields))
+            records.append(
+                BedRecord(
+                    chrom=fields[0],
+                    start=start,
+                    end=end,
+                    fields=tfields,
+                    source_start=int(fields[1]),
+                    source_end=int(fields[2]),
+                )
+            )
     if wanted_types is not None and not saw_gene_type:
         raise ValueError(
             f"{path} does not have BED column 9 gene_type; cannot apply --gene-type {gene_type!r}"

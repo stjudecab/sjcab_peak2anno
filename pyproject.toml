@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sjcab_peak2anno"
-version = "0.1.0"
+version = "0.1.7"
 description = "Annotate genomic peaks to genes, genomic contexts, and chromatin states."
 readme = "README.md"
 requires-python = ">=3.7"
@@ -28,8 +28,13 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Bio-Informatics"
 ]
 dependencies = [
-    "sjcab_peak2anno_db==0.1.5",
+    "sjcab_peak2anno_db==0.1.7",
 ]
+
+[project.urls]
+Homepage = "https://github.com/stjudecab/sjcab_peak2anno"
+Repository = "https://github.com/stjudecab/sjcab_peak2anno"
+Issues = "https://github.com/stjudecab/sjcab_peak2anno/issues"
 
 [project.optional-dependencies]
 plot = ["matplotlib>=3.5"]

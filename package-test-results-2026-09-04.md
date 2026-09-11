@@ -85,8 +85,7 @@ toy_db = PosixPath('/tmp/pytest-of-bxu2/pytest-6/test_peak2gene_default_tss0/db'
                 output_path=out,
                 species="toy",
                 db_path=str(toy_db),
-                promoter_cutoff="100bp",
-                enhancer_cutoff="3000bp",
+                prom_enha_cutoffs="100bp,3000bp",
             )
         )
 
@@ -252,7 +251,7 @@ tmp_path = PosixPath('/tmp/pytest-of-bxu2/pytest-9/test_narrow_context_priority0
 context_dir = PosixPath('/tmp/pytest-of-bxu2/pytest-9/test_narrow_context_priority0/context')
 
     def test_narrow_context_priority(tmp_path: Path, context_dir: Path) -> None:
-        """narrow2context should assign the first priority feature that overlaps."""
+        """narrow2feature should assign the first priority feature that overlaps."""
         peaks = write(
             tmp_path / "peaks.bed",
             "chr1\t0\t100\tp1\nchr1\t100\t200\tp2\nchr1\t200\t300\tp3\n",
@@ -292,7 +291,7 @@ tmp_path = PosixPath('/tmp/pytest-of-bxu2/pytest-9/test_broad_context_reports_fr
 context_dir = PosixPath('/tmp/pytest-of-bxu2/pytest-9/test_broad_context_reports_fra0/context')
 
     def test_broad_context_reports_fractions(tmp_path: Path, context_dir: Path) -> None:
-        """broad2context should report per-feature fractions instead of priority-only labels."""
+        """broad2feature should report per-feature fractions instead of priority-only labels."""
         peaks = write(tmp_path / "peaks.bed", "chr1\t0\t100\tp1\n")
         out = tmp_path / "broad.tsv"
         output, summary = annotate_broad_context(
@@ -395,5 +394,54 @@ Verification rerun after Python 3.7-compatible command quoting:
 ```text
 .............                                                            [100%]
 13 passed in 0.12s
+
+## 2026-09-10 — promoter direction and rc configuration
+
+Validation commands:
+
+```bash
+ruff check src tests
+PYTHONPATH=src .venv/bin/python -m compileall -q src tests
+```
+
+Result:
+
+```text
+All checks passed!
+```
+
+The existing pytest suite was not rerun because the available environments did
+not provide a compatible pytest installation.
+
+Additional configuration check on 2026-09-10:
+
+```text
+SJCAB_PEAK2ANNO_GENE_TYPE=nomicro SJCAB_PEAK2ANNO_ISO_SET=deduplong
+parser defaults: nomicro deduplong
+ruff: All checks passed!
+
+2026-09-11 validation:
+
+```text
+cutoff/CLI checks passed
+ruff: All checks passed!
+```
+
+Feature/state output-mode validation on 2026-09-10:
+
+```text
+max,percent -> [max, percent]
+percent,max -> [percent, max]
+ruff: All checks passed!
+```
+
+Output-mode configuration validation on 2026-09-10:
+
+```text
+SJCAB_PEAK2ANNO_2FEATURE_OUT=percent,max -> percent,max
+SJCAB_PEAK2ANNO_2STATE_OUT=max -> max
+ruff: All checks passed!
+```
+```
 ```
 ```
