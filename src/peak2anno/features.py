@@ -1,4 +1,4 @@
-"""Context and chromatin-state annotation implementations."""
+"""Feature and chromatin-state annotation implementations."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from .db import candidate_context_dirs
+from .db import candidate_feature_dirs
 from .intervals import (
     BedRecord,
     InputRegion,
@@ -48,14 +48,14 @@ class FeatureSpec:
 
 
 @dataclass(frozen=True)
-class ContextConfig:
-    """Configuration for narrow or broad genomic context annotation."""
+class FeatureConfig:
+    """Configuration for narrow or broad genomic feature annotation."""
 
     input_path: Path
     output_path: Optional[Path]
     species: str
     db_path: Optional[str] = None
-    context_dir: Optional[Path] = None
+    feature_dir: Optional[Path] = None
     features: Optional[str] = None
     feature_labels: Optional[str] = None
     overlap_cutoff: str = "1bp"
@@ -101,39 +101,39 @@ def read_list_or_csv(value: str, base_dir: Optional[Path] = None) -> List[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-def resolve_context_dir(species: str, db_path: Optional[str], explicit: Optional[Path]) -> Path:
-    """Resolve the feature BED directory for genomic context commands."""
+def resolve_feature_dir(species: str, db_path: Optional[str], explicit: Optional[Path]) -> Path:
+    """Resolve the feature BED directory for genomic feature commands."""
     if explicit is not None:
         if not explicit.is_dir():
-            raise FileNotFoundError(f"--context-dir does not exist: {explicit}")
+            raise FileNotFoundError(f"--feature-dir does not exist: {explicit}")
         return explicit
-    for candidate in candidate_context_dirs(species, root_path=db_path):
+    for candidate in candidate_feature_dirs(species, root_path=db_path):
         if (candidate / DEFAULT_FEATURES[0][0]).is_file():
             return candidate
-    searched = "\n".join(str(path) for path in candidate_context_dirs(species, root_path=db_path))
+    searched = "\n".join(str(path) for path in candidate_feature_dirs(species, root_path=db_path))
     raise FileNotFoundError(
-        "Could not find default context feature BEDs. Use --context-dir or --features/--feature-labels.\n"
+        "Could not find default feature BEDs. Use --feature-dir or --features/--feature-labels.\n"
         f"Searched:\n{searched}"
     )
 
 
-def resolve_features(config: ContextConfig) -> List[FeatureSpec]:
-    """Resolve context feature BED files and labels."""
-    context_dir = resolve_context_dir(config.species, config.db_path, config.context_dir)
+def resolve_features(config: FeatureConfig) -> List[FeatureSpec]:
+    """Resolve feature BED files and labels."""
+    feature_dir = resolve_feature_dir(config.species, config.db_path, config.feature_dir)
     if config.features is None and config.feature_labels is None:
-        specs = [FeatureSpec(context_dir / filename, label) for filename, label in DEFAULT_FEATURES]
+        specs = [FeatureSpec(feature_dir / filename, label) for filename, label in DEFAULT_FEATURES]
         return order_feature_specs(specs)
     if config.features is None or config.feature_labels is None:
         raise ValueError("--features and --feature-labels must be provided together")
-    feature_values = read_list_or_csv(config.features, base_dir=context_dir)
-    label_values = read_list_or_csv(config.feature_labels, base_dir=context_dir)
+    feature_values = read_list_or_csv(config.features, base_dir=feature_dir)
+    label_values = read_list_or_csv(config.feature_labels, base_dir=feature_dir)
     if len(feature_values) != len(label_values):
         raise ValueError("--features and --feature-labels must have the same number of entries")
     specs: List[FeatureSpec] = []
     for value, label in zip(feature_values, label_values):
         path = Path(value)
         if not path.is_absolute():
-            path = context_dir / path
+            path = feature_dir / path
         specs.append(FeatureSpec(path, label))
     return order_feature_specs(specs)
 
@@ -294,8 +294,8 @@ def write_count_summary(
     write_table(path, header, [row])
 
 
-def annotate_narrow_context(config: ContextConfig) -> Tuple[Path, Path]:
-    """Annotate each peak to one prioritized genomic context feature."""
+def annotate_narrow_feature(config: FeatureConfig) -> Tuple[Path, Path]:
+    """Annotate each peak to one prioritized genomic feature."""
     output_format = config.output_format if config.output_format != "auto" else detect_output_format(config.input_path, config.header, config.input_format, config.columns, config.region_column)
     header, regions = read_regions(config.input_path, header=config.header, input_format=config.input_format, columns=config.columns, region_column=config.region_column)
     specs = resolve_features(config)
@@ -332,7 +332,7 @@ def annotate_narrow_context(config: ContextConfig) -> Tuple[Path, Path]:
     if config.plot:
         if summary is None:
             raise ValueError("--plot requires --summary when --output is omitted")
-        write_count_plots(counts, summary.with_suffix(""), f"Genomic context: {config.input_path.name}")
+        write_count_plots(counts, summary.with_suffix(""), f"Genomic feature: {config.input_path.name}")
     return config.output_path, summary
 
 
@@ -398,8 +398,8 @@ def broad_rows(
     return out_header, rows, primary_counts, bp_totals
 
 
-def annotate_broad_context(config: ContextConfig) -> Tuple[Path, Path]:
-    """Annotate each peak with per-feature context overlap fractions."""
+def annotate_broad_feature(config: FeatureConfig) -> Tuple[Path, Path]:
+    """Annotate each peak with per-feature overlap fractions."""
     output_format = config.output_format if config.output_format != "auto" else detect_output_format(config.input_path, config.header, config.input_format, config.columns, config.region_column)
     header, regions = read_regions(config.input_path, header=config.header, input_format=config.input_format, columns=config.columns, region_column=config.region_column)
     specs = resolve_features(config)
@@ -431,7 +431,7 @@ def annotate_broad_context(config: ContextConfig) -> Tuple[Path, Path]:
     if config.plot:
         if summary is None:
             raise ValueError("--plot requires --summary when --output is omitted")
-        write_count_plots(primary_counts, summary.with_suffix(""), f"Broad genomic context: {config.input_path.name}")
+        write_count_plots(primary_counts, summary.with_suffix(""), f"Broad genomic feature: {config.input_path.name}")
     return config.output_path, summary
 
 
@@ -497,5 +497,5 @@ def annotate_peak_state(config: StateConfig) -> Tuple[Path, Path]:
     if config.plot:
         if summary is None:
             raise ValueError("--plot requires --summary when --output is omitted")
-        write_count_plots(primary_counts, summary.with_suffix(""), f"Peak state context: {config.input_path.name}")
+        write_count_plots(primary_counts, summary.with_suffix(""), f"Peak state feature: {config.input_path.name}")
     return config.output_path, summary

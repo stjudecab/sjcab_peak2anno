@@ -11,11 +11,11 @@ from pathlib import Path
 
 import pytest
 
-from peak2anno.context import (
-    ContextConfig,
+from peak2anno.feature import (
+    FeatureConfig,
     StateConfig,
-    annotate_broad_context,
-    annotate_narrow_context,
+    annotate_broad_feature,
+    annotate_narrow_feature,
     annotate_peak_state,
 )
 from peak2anno.cli import build_parser, main
@@ -83,9 +83,9 @@ def make_toy_db(tmp_path: Path) -> Path:
     return root
 
 
-def make_context_dir(tmp_path: Path) -> Path:
-    """Create a minimal default context annotation directory."""
-    context = tmp_path / "context"
+def make_feature_dir(tmp_path: Path) -> Path:
+    """Create a minimal default feature annotation directory."""
+    feature = tmp_path / "feature"
     files = {
         "2kb.promoter.up.bed": "chr1\t0\t100\n",
         "2kb.promoter.down.bed": "",
@@ -97,8 +97,8 @@ def make_context_dir(tmp_path: Path) -> Path:
         "2kb.intergenic.bed": "chr1\t200\t300\n",
     }
     for filename, text in files.items():
-        write(context / filename, text)
-    return context
+        write(feature / filename, text)
+    return feature
 
 
 @pytest.fixture
@@ -108,9 +108,9 @@ def toy_db(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def context_dir(tmp_path: Path) -> Path:
-    """Provide a toy context annotation directory for a test."""
-    return make_context_dir(tmp_path)
+def feature_dir(tmp_path: Path) -> Path:
+    """Provide a toy feature annotation directory for a test."""
+    return make_feature_dir(tmp_path)
 
 
 def test_peak2gene_default_tss(tmp_path: Path, toy_db: Path) -> None:
@@ -215,16 +215,16 @@ def test_rc_settings_are_overridden_by_environment(tmp_path: Path, monkeypatch: 
 
 def test_feature_percent_mode_uses_order_list(tmp_path: Path) -> None:
     """Feature percentages should partition overlap in order-list order."""
-    context = make_context_dir(tmp_path)
-    write(context / "order.lst", "exon\npromoter.up\npromoter.down\nintron\ntes\ndis5\ndis3\nintergenic\n")
+    feature = make_feature_dir(tmp_path)
+    write(feature / "order.lst", "exon\npromoter.up\npromoter.down\nintron\ntes\ndis5\ndis3\nintergenic\n")
     peaks = write(tmp_path / "peaks.bed", "chr1\t0\t200\tp1\n")
     output = tmp_path / "features.tsv"
-    annotate_narrow_context(
-        ContextConfig(
+    annotate_narrow_feature(
+        FeatureConfig(
             input_path=peaks,
             output_path=output,
             species="toy",
-            context_dir=context,
+            feature_dir=feature,
             output_format="txt",
             output_mode="percent",
         )
@@ -324,30 +324,30 @@ def test_combined_annotations_merge_columns(tmp_path: Path, capsys: pytest.Captu
     """The combined command should merge multiple annotation result blocks."""
     peaks = write(tmp_path / "peaks.bed", "chr1\t50\t150\tpeak1\n")
     tss = write(tmp_path / "tss.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\n")
-    context = make_context_dir(tmp_path)
+    feature = make_feature_dir(tmp_path)
     monkeypatch.chdir(tmp_path)
     assert main([
         "peak2gene", "narrow2feature", str(peaks), "--tss-bed", str(tss),
-        "--context-dir", str(context), "--workers", "2", "--output-format", "txt",
+        "--feature-dir", str(feature), "--workers", "2", "--output-format", "txt",
     ]) == 0
     output = capsys.readouterr().out
     assert "Closest_Gene" in output
     assert "FeatureAssignment" in output
 
 
-def test_narrow_context_priority(tmp_path: Path, context_dir: Path) -> None:
+def test_narrow_feature_priority(tmp_path: Path, feature_dir: Path) -> None:
     """narrow2feature should assign the first priority feature that overlaps."""
     peaks = write(
         tmp_path / "peaks.bed",
         "chr1\t0\t100\tp1\nchr1\t100\t200\tp2\nchr1\t200\t300\tp3\n",
     )
     out = tmp_path / "narrow.tsv"
-    output, summary = annotate_narrow_context(
-        ContextConfig(
+    output, summary = annotate_narrow_feature(
+        FeatureConfig(
             input_path=peaks,
             output_path=out,
             species="toy",
-            context_dir=context_dir,
+            feature_dir=feature_dir,
             overlap_cutoff="0.5",
         )
     )
@@ -362,16 +362,16 @@ def test_narrow_context_priority(tmp_path: Path, context_dir: Path) -> None:
     assert summary_rows[1][4:7] == ["1", "0", "2"]
 
 
-def test_narrow_context_finds_context_dir_under_db_path(tmp_path: Path) -> None:
-    """Context commands should search the database root when no directory is given."""
-    context = make_context_dir(tmp_path)
-    db_context = tmp_path / "db" / "toy" / "context"
-    shutil.copytree(context, db_context)
+def test_narrow_feature_finds_feature_dir_under_db_path(tmp_path: Path) -> None:
+    """Feature commands should search the database root when no directory is given."""
+    feature = make_feature_dir(tmp_path)
+    db_feature = tmp_path / "db" / "toy" / "features"
+    shutil.copytree(feature, db_feature)
     peaks = write(tmp_path / "peaks.bed", "chr1\t0\t100\tp1\n")
     output = tmp_path / "narrow.tsv"
 
-    annotate_narrow_context(
-        ContextConfig(
+    annotate_narrow_feature(
+        FeatureConfig(
             input_path=peaks,
             output_path=output,
             species="toy",
@@ -383,16 +383,16 @@ def test_narrow_context_finds_context_dir_under_db_path(tmp_path: Path) -> None:
     assert read_tsv(output)[1][-1] == "Promoter.Up"
 
 
-def test_broad_context_reports_fractions(tmp_path: Path, context_dir: Path) -> None:
+def test_broad_feature_reports_fractions(tmp_path: Path, feature_dir: Path) -> None:
     """broad2feature should report per-feature fractions instead of priority-only labels."""
     peaks = write(tmp_path / "peaks.bed", "chr1\t0\t100\tp1\n")
     out = tmp_path / "broad.tsv"
-    output, summary = annotate_broad_context(
-        ContextConfig(
+    output, summary = annotate_broad_feature(
+        FeatureConfig(
             input_path=peaks,
             output_path=out,
             species="toy",
-            context_dir=context_dir,
+            feature_dir=feature_dir,
             overlap_cutoff="1bp",
         )
     )

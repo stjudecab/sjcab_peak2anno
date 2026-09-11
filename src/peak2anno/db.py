@@ -210,19 +210,18 @@ def available_versions(root_path: Optional[str] = None) -> List[Dict[str, Any]]:
     return rows
 
 
-def candidate_context_dirs(species: str, root_path: Optional[str] = None) -> List[Path]:
-    """Return context feature directory candidates for a species."""
+def candidate_feature_dirs(species: str, root_path: Optional[str] = None) -> List[Path]:
+    """Return feature directory candidates for a species."""
     root = db_root(root_path)
     package_root = Path(__file__).resolve().parents[2]
     cwd = Path.cwd()
     candidates = [
-        root / species / "context",
         root / species / "features",
         root / species,
     ]
     species_root = root / species
     if species_root.is_dir():
         for version_root in sorted(path for path in species_root.iterdir() if path.is_dir()):
-            candidates.extend([version_root / "context", version_root / "features", version_root])
+            candidates.extend([version_root / "features", version_root])
     candidates.extend([cwd / "annotations" / species, package_root / "annotations" / species])
     return candidates

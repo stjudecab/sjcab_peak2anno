@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sjcab_peak2anno"
 version = "0.1.7"
-description = "Annotate genomic peaks to genes, genomic contexts, and chromatin states."
+description = "Annotate genomic peaks to genes, genomic features, and chromatin states."
 readme = "README.md"
 requires-python = ">=3.7"
 license = {text = "Apache-2.0"}

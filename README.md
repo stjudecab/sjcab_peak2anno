@@ -127,7 +127,7 @@ Runtime annotation data comes from the separately installed
 
 `-o/--output` is optional. If it is omitted, the main annotation table is
 written to stdout, so it can be piped to another command. Use
-`--summary summary.tsv` if a context/state summary is also needed without a
+`--summary summary.tsv` if a feature/state summary is also needed without a
 main output file.
 
 Every CLI run appends its command line and resolved input/reference files to
@@ -197,7 +197,7 @@ The concise syntax accepts consecutive subcommands:
 ```bash
 peak2anno peak2gene narrow2feature peaks.bed \
   --tss-bed tests_data/tss.bed \
-  --context-dir annotations/hg38 \
+  --feature-dir annotations/hg38 \
   --output combined.tsv --workers 2
 ```
 
@@ -208,7 +208,7 @@ peak2anno combined \
   --commands peak2gene \
   --commands narrow2feature \
   peaks.bed --tss-bed tests_data/tss.bed \
-  --context-dir annotations/hg38 --output combined.tsv
+  --feature-dir annotations/hg38 --output combined.tsv
 ```
 
 The combined implementation reuses the same input and reference settings for
@@ -233,8 +233,8 @@ Examples:
 ```bash
 peak2anno loop2gene loops.bedpe --tss-bed tests_data/tss.bed \
   --output loops.annotated.tsv
-peak2anno loop2feature loops.bedpe --context-dir annotations/hg38 \
-  --output loops.context.tsv --context-mode broad
+peak2anno loop2feature loops.bedpe --feature-dir annotations/hg38 \
+  --output loops.feature.tsv --feature-mode broad
 peak2anno loop2state loops.bedpe --states states.bed \
   --output loops.states.bedpe --output-format bedpe
 ```
@@ -254,14 +254,14 @@ peak2anno loop2state loops.bedpe --states states.bed \
 When a filter other than `all` is used, the selected gene BED must contain a
 gene type in column 9.
 
-## Context database lookup
+## Feature database lookup
 
 `narrow2feature` and `broad2feature` automatically search the database root
 from `--db-path`, `$SJCAB_PEAK2ANNO_DB_PATH`, or
-`~/.sjcab_peak2anno_db` when `--context-dir` is omitted. They look for the
-standard context files such as `2kb.promoter.up.bed` and `2kb.exon.bed` under
-`<db>/<species>/context`, `<db>/<species>/features`, or a versioned species
-directory. Use `-c/--context-dir` to override this lookup.
+`~/.sjcab_peak2anno_db` when `--feature-dir` is omitted. They look for the
+standard feature files such as `2kb.promoter.up.bed` and `2kb.exon.bed` under
+`<db>/<species>/features` or a versioned species
+directory. Use `-c/--feature-dir` to override this lookup.
 
 ## Missing database references
 
@@ -270,7 +270,7 @@ prints the exact `sjcab-peak2anno-db` command it proposes and asks:
 `Install database files now? [y/N]:` Type `y` or `yes` to run it and retry the
 annotation; any other answer leaves the run unchanged. For the default version,
 the proposal is `sjcab-peak2anno-db install-bed`; for an explicit version it is
-`sjcab-peak2anno-db download-bed SPECIES VERSION`. Context commands propose
+`sjcab-peak2anno-db download-bed SPECIES VERSION`. Feature commands propose
 `sjcab-peak2anno-db install gencode-feature`. An explicit `--tss-bed`,
-`--gene-bed`, or `--context-dir` is never replaced automatically. In a pipe or
+`--gene-bed`, or `--feature-dir` is never replaced automatically. In a pipe or
 other non-interactive session installation is declined safely.

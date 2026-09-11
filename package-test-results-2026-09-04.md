@@ -245,24 +245,24 @@ ERROR tests/test_package.py
 
 ....F.FF                                                                 [100%]
 =================================== FAILURES ===================================
-_________________________ test_narrow_context_priority _________________________
+_________________________ test_narrow_feature_priority _________________________
 
-tmp_path = PosixPath('/tmp/pytest-of-bxu2/pytest-9/test_narrow_context_priority0')
-context_dir = PosixPath('/tmp/pytest-of-bxu2/pytest-9/test_narrow_context_priority0/context')
+tmp_path = PosixPath('/tmp/pytest-of-bxu2/pytest-9/test_narrow_feature_priority0')
+feature_dir = PosixPath('/tmp/pytest-of-bxu2/pytest-9/test_narrow_feature_priority0/feature')
 
-    def test_narrow_context_priority(tmp_path: Path, context_dir: Path) -> None:
+    def test_narrow_feature_priority(tmp_path: Path, feature_dir: Path) -> None:
         """narrow2feature should assign the first priority feature that overlaps."""
         peaks = write(
             tmp_path / "peaks.bed",
             "chr1\t0\t100\tp1\nchr1\t100\t200\tp2\nchr1\t200\t300\tp3\n",
         )
         out = tmp_path / "narrow.tsv"
-        output, summary = annotate_narrow_context(
-            ContextConfig(
+        output, summary = annotate_narrow_feature(
+            FeatureConfig(
                 input_path=peaks,
                 output_path=out,
                 species="toy",
-                context_dir=context_dir,
+                feature_dir=feature_dir,
                 overlap_cutoff="0.5",
             )
         )
@@ -285,21 +285,21 @@ path = None
 E       AttributeError: 'NoneType' object has no attribute 'open'
 
 tests/test_package.py:32: AttributeError
-_____________________ test_broad_context_reports_fractions _____________________
+_____________________ test_broad_feature_reports_fractions _____________________
 
-tmp_path = PosixPath('/tmp/pytest-of-bxu2/pytest-9/test_broad_context_reports_fra0')
-context_dir = PosixPath('/tmp/pytest-of-bxu2/pytest-9/test_broad_context_reports_fra0/context')
+tmp_path = PosixPath('/tmp/pytest-of-bxu2/pytest-9/test_broad_feature_reports_fra0')
+feature_dir = PosixPath('/tmp/pytest-of-bxu2/pytest-9/test_broad_feature_reports_fra0/feature')
 
-    def test_broad_context_reports_fractions(tmp_path: Path, context_dir: Path) -> None:
+    def test_broad_feature_reports_fractions(tmp_path: Path, feature_dir: Path) -> None:
         """broad2feature should report per-feature fractions instead of priority-only labels."""
         peaks = write(tmp_path / "peaks.bed", "chr1\t0\t100\tp1\n")
         out = tmp_path / "broad.tsv"
-        output, summary = annotate_broad_context(
-            ContextConfig(
+        output, summary = annotate_broad_feature(
+            FeatureConfig(
                 input_path=peaks,
                 output_path=out,
                 species="toy",
-                context_dir=context_dir,
+                feature_dir=feature_dir,
                 overlap_cutoff="1bp",
             )
         )
@@ -358,8 +358,8 @@ E       AttributeError: 'NoneType' object has no attribute 'open'
 
 tests/test_package.py:32: AttributeError
 =========================== short test summary info ============================
-FAILED tests/test_package.py::test_narrow_context_priority - AttributeError: ...
-FAILED tests/test_package.py::test_broad_context_reports_fractions - Attribut...
+FAILED tests/test_package.py::test_narrow_feature_priority - AttributeError: ...
+FAILED tests/test_package.py::test_broad_feature_reports_fractions - Attribut...
 FAILED tests/test_package.py::test_peak2state_reports_named_states - Attribut...
 3 failed, 5 passed in 0.10s
 

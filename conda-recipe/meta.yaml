@@ -44,7 +44,7 @@ about:
   doc_url: https://github.com/stjudecab/sjcab_peak2anno/blob/main/README.md
   issue_url: https://github.com/stjudecab/sjcab_peak2anno/issues
   license: Apache-2.0
-  summary: Annotate genomic peaks to genes, genomic contexts, and chromatin states.
+  summary: Annotate genomic peaks to genes, genomic features, and chromatin states.
   description: |
     peak2anno provides the peak2gene, narrow2feature, broad2feature,
     and peak2state commands. Runtime annotation BED files are resolved from

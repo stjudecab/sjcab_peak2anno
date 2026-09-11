@@ -61,8 +61,8 @@ order when one is present.
 
 ```bash
 peak2anno peak2gene peaks.bed -o peaks.peak2gene.tsv --species hg38
-peak2anno narrow2feature peaks.bed -o peaks.context.tsv --species hg38 --context-dir annotations/hg38
-peak2anno broad2feature peaks.bed -o peaks.context_fractions.tsv --species hg38 --context-dir annotations/hg38
+peak2anno narrow2feature peaks.bed -o peaks.feature.tsv --species hg38 --feature-dir annotations/hg38
+peak2anno broad2feature peaks.bed -o peaks.feature_fractions.tsv --species hg38 --feature-dir annotations/hg38
 peak2anno peak2state peaks.bed --states dense_states.bed -o peaks.states.tsv
 ```
 
@@ -82,7 +82,7 @@ fractions for every feature, plus the primary feature by largest passing fractio
 `peak2state` applies the same broad overlap calculation to a ChromHMM or Segway
 dense/segments BED. Use `--state2name` for a two-column state ID to display-name map.
 
-All context/state commands support `--overlap-cutoff`, where values like `10bp`
+All feature/state commands support `--overlap-cutoff`, where values like `10bp`
 mean base pairs and values like `0.1` or `10%` mean a fraction of each input peak.
 Use `--summary` to choose the summary TSV path and `--plot` to write PNG/PDF plots
 when `matplotlib` is installed.

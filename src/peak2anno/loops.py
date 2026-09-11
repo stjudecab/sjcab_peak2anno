@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
-from .context import ContextConfig, StateConfig, annotate_broad_context, annotate_narrow_context, annotate_peak_state
+from .features import FeatureConfig, StateConfig, annotate_broad_feature, annotate_narrow_feature, annotate_peak_state
 from .intervals import InputRegion, split_fields, write_table
 from .peak2gene import PeakGeneConfig, annotate_peak2gene
 
@@ -92,8 +92,8 @@ def annotate_loop(
             if command == "loop2gene":
                 annotate_peak2gene(PeakGeneConfig(input_path=anchor_input, output_path=anchor_output, species=str(kwargs["species"]), species_version=str(kwargs["species_version"]), isoform_version=str(kwargs["isoform_version"]), prom_enha_cutoffs=str(kwargs.get("prom_enha_cutoffs", "2kb,50kb,2kb")), gene_type=str(kwargs.get("gene_type", "all")), db_path=kwargs.get("db_path"), tss_bed=kwargs.get("tss_bed"), gene_bed=kwargs.get("gene_bed"), output_format="txt"))
             elif command == "loop2feature":
-                config = ContextConfig(input_path=anchor_input, output_path=anchor_output, species=str(kwargs["species"]), db_path=kwargs.get("db_path"), context_dir=kwargs.get("context_dir"), overlap_cutoff=str(kwargs["overlap_cutoff"]), output_mode=str(kwargs.get("output_mode", "legacy")), output_format="txt")
-                (annotate_broad_context if kwargs.get("context_mode") == "broad" else annotate_narrow_context)(config)
+                config = FeatureConfig(input_path=anchor_input, output_path=anchor_output, species=str(kwargs["species"]), db_path=kwargs.get("db_path"), feature_dir=kwargs.get("feature_dir"), overlap_cutoff=str(kwargs["overlap_cutoff"]), output_mode=str(kwargs.get("output_mode", "legacy")), output_format="txt")
+                (annotate_broad_feature if kwargs.get("feature_mode") == "broad" else annotate_narrow_feature)(config)
             elif command == "loop2state":
                 annotate_peak_state(StateConfig(input_path=anchor_input, output_path=anchor_output, states_path=Path(str(kwargs["states"])), state2name=kwargs.get("state2name"), overlap_cutoff=str(kwargs["overlap_cutoff"]), output_mode=str(kwargs.get("output_mode", "legacy")), output_format="txt"))
             else:

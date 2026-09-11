@@ -14,11 +14,11 @@ from pathlib import Path
 from typing import List, Optional, Sequence
 
 from . import __version__
-from .context import (
-    ContextConfig,
+from .features import (
+    FeatureConfig,
     StateConfig,
-    annotate_broad_context,
-    annotate_narrow_context,
+    annotate_broad_feature,
+    annotate_narrow_feature,
     annotate_peak_state,
     resolve_features,
 )
@@ -29,15 +29,15 @@ from .loops import annotate_loop
 from .intervals import detect_output_format, read_regions, write_table
 
 
-def add_common_context_args(parser: argparse.ArgumentParser, settings: Settings) -> None:
+def add_common_feature_args(parser: argparse.ArgumentParser, settings: Settings) -> None:
     """Add arguments shared by narrow2feature and broad2feature."""
     add_input_args(parser, "Input BED/TSV or region-text file.")
     parser.add_argument("-o", "--output", type=Path, help="Output TSV path; defaults to stdout.")
     parser.add_argument("-s", "--species", default=settings.default_species, help="Species key, for example hg38 or mm10.")
     parser.add_argument("-d", "--db-path", default=settings.db_path, help="Database root; defaults to rc/env or ~/.sjcab_peak2anno_db.")
     parser.add_argument(
-        "-c", "--context-dir", type=Path,
-        help="Context BED directory. If omitted, search --db-path for the species context files.",
+        "-c", "--feature-dir", type=Path,
+        help="Feature BED directory. If omitted, search --db-path for the species feature files.",
     )
     parser.add_argument("--input-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Input format.")
     parser.add_argument("--columns", help="BED columns as comma-separated zero-based indexes, for example 0,1,2.")
@@ -103,7 +103,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     settings = settings or load_settings()
     parser = argparse.ArgumentParser(
         prog="peak2anno",
-        description="Annotate genomic peaks to nearby genes, genomic contexts, and chromatin states.",
+        description="Annotate genomic peaks to nearby genes, genomic features, and chromatin states.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"peak2anno {__version__}")
@@ -147,19 +147,19 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
 
     narrow = subparsers.add_parser(
         "narrow2feature",
-        help="Assign one priority-ordered genomic context label.",
+        help="Assign one priority-ordered genomic feature label.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    add_common_context_args(narrow, settings)
+    add_common_feature_args(narrow, settings)
     narrow.add_argument("--column-name", default="FeatureAssignment", help="Output annotation column name.")
     add_output_mode_arg(narrow, settings.feature_out, "Output max assignment, ordered percentages, or both.")
 
     broad = subparsers.add_parser(
         "broad2feature",
-        help="Report per-feature genomic context overlap fractions.",
+        help="Report per-feature genomic feature overlap fractions.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    add_common_context_args(broad, settings)
+    add_common_feature_args(broad, settings)
     add_output_mode_arg(broad, settings.feature_out, "Output max assignment, ordered percentages, or both.")
 
     state = subparsers.add_parser(
@@ -201,8 +201,8 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         loop.add_argument("--gene-type", default=settings.gene_type, help="Gene type selector for loop2gene.")
         loop.add_argument("--tss-bed", type=Path, help="Override TSS BED.")
         loop.add_argument("--gene-bed", type=Path, help="Override gene BED.")
-        loop.add_argument("-c", "--context-dir", type=Path, help="Context BED directory.")
-        loop.add_argument("--context-mode", choices=["narrow", "broad"], default="narrow", help="Context mode.")
+        loop.add_argument("-c", "--feature-dir", type=Path, help="Feature BED directory.")
+        loop.add_argument("--feature-mode", choices=["narrow", "broad"], default="narrow", help="Feature mode.")
         loop.add_argument("--overlap-cutoff", default="1bp", help="Minimum overlap.")
         loop.add_argument("--states", type=Path, help="Chromatin state BED.")
         loop.add_argument("--state2name", type=Path, help="State ID/name map.")
@@ -219,14 +219,14 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     combined.add_argument("--iso", "--isoform-set", "--isoform-version", dest="isoform_version", choices=["all", "deduplong"], default=settings.iso_set, help="Isoform set.")
     combined.add_argument("--tss-bed", type=Path, help="Override TSS BED.")
     combined.add_argument("--gene-bed", type=Path, help="Override gene BED.")
-    combined.add_argument("-c", "--context-dir", type=Path, help="Context BED directory.")
-    combined.add_argument("--features", help="Context feature BEDs.")
-    combined.add_argument("--feature-labels", help="Context feature labels.")
+    combined.add_argument("-c", "--feature-dir", type=Path, help="Feature BED directory.")
+    combined.add_argument("--features", help="Feature BEDs.")
+    combined.add_argument("--feature-labels", help="Feature labels.")
     combined.add_argument("--gene-type", default=settings.gene_type, help="Gene type filter.")
     combined.add_argument("--states", type=Path, help="Chromatin state BED.")
     combined.add_argument("--state2name", type=Path, help="State ID/name map.")
     add_gene_cutoff_args(combined, settings)
-    combined.add_argument("--column-name", default="FeatureAssignment", help="Context output column name.")
+    combined.add_argument("--column-name", default="FeatureAssignment", help="Feature output column name.")
     combined.add_argument("--overlap-cutoff", default="1bp", help="Minimum overlap.")
     combined.add_argument("--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
     combined.add_argument("--input-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto")
@@ -271,13 +271,13 @@ def run(args: argparse.Namespace) -> Optional[Path]:
             )
         )
     if args.command == "narrow2feature":
-        output, _summary = annotate_narrow_context(
-            ContextConfig(
+        output, _summary = annotate_narrow_feature(
+            FeatureConfig(
                 input_path=args.input,
                 output_path=args.output,
                 species=args.species,
                 db_path=args.db_path,
-                context_dir=args.context_dir,
+                feature_dir=args.feature_dir,
                 features=args.features,
                 feature_labels=args.feature_labels,
                 overlap_cutoff=args.overlap_cutoff,
@@ -294,13 +294,13 @@ def run(args: argparse.Namespace) -> Optional[Path]:
         )
         return output
     if args.command == "broad2feature":
-        output, _summary = annotate_broad_context(
-            ContextConfig(
+        output, _summary = annotate_broad_feature(
+            FeatureConfig(
                 input_path=args.input,
                 output_path=args.output,
                 species=args.species,
                 db_path=args.db_path,
-                context_dir=args.context_dir,
+                feature_dir=args.feature_dir,
                 features=args.features,
                 feature_labels=args.feature_labels,
                 overlap_cutoff=args.overlap_cutoff,
@@ -351,8 +351,8 @@ def run(args: argparse.Namespace) -> Optional[Path]:
             tss_bed=args.tss_bed,
             gene_bed=args.gene_bed,
             gene_type=args.gene_type,
-            context_dir=args.context_dir,
-            context_mode=args.context_mode,
+            feature_dir=args.feature_dir,
+            feature_mode=args.feature_mode,
             overlap_cutoff=args.overlap_cutoff,
             prom_enha_cutoffs=args.prom_enha_cutoffs,
             output_mode=args.output_mode,
@@ -484,17 +484,17 @@ def resolved_references(args: argparse.Namespace) -> list[str]:
         )
         references.append(f"gene/TSS: {resolve_tss_path(config).expanduser().resolve()}")
     elif args.command in {"narrow2feature", "broad2feature"}:
-        config = ContextConfig(
+        config = FeatureConfig(
             input_path=args.input,
             output_path=args.output,
             species=args.species,
             db_path=args.db_path,
-            context_dir=args.context_dir,
+            feature_dir=args.feature_dir,
             features=args.features,
             feature_labels=args.feature_labels,
         )
         for spec in resolve_features(config):
-            references.append(f"context {spec.label}: {spec.path.expanduser().resolve()}")
+            references.append(f"feature {spec.label}: {spec.path.expanduser().resolve()}")
     elif args.command == "peak2state":
         references.append(f"states: {args.states.expanduser().resolve()}")
         if args.state2name is not None:
@@ -535,9 +535,9 @@ def database_install_command(args: argparse.Namespace) -> Optional[list[str]]:
     if isinstance(commands, str):
         commands = [commands]
     needs_gene = "peak2gene" in commands or "loop2gene" in commands
-    needs_context = any(command in {"narrow2feature", "broad2feature", "loop2feature"} for command in commands)
+    needs_feature = any(command in {"narrow2feature", "broad2feature", "loop2feature"} for command in commands)
     has_gene_override = getattr(args, "gene_bed", None) is not None or getattr(args, "tss_bed", None) is not None
-    has_context_override = getattr(args, "context_dir", None) is not None or getattr(args, "features", None) is not None
+    has_feature_override = getattr(args, "feature_dir", None) is not None or getattr(args, "features", None) is not None
 
     if needs_gene and not has_gene_override:
         if version in {"def", "default"}:
@@ -549,8 +549,8 @@ def database_install_command(args: argparse.Namespace) -> Optional[list[str]]:
             if data_dir:
                 command.extend(["-o", data_dir])
         return command
-    if needs_context and not has_context_override:
-        # Context files are generated by the database package's feature command.
+    if needs_feature and not has_feature_override:
+        # Feature files are generated by the database package's feature command.
         command = ["sjcab-peak2anno-db", "install", "gencode-feature"]
         if data_dir:
             command.extend(["-d", data_dir])
