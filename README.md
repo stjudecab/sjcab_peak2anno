@@ -4,8 +4,15 @@
 features, and chromatin states.
 
 The package provides both `peak2anno` and `sjcab-peak2anno` command-line
-entry points. It requires `sjcab_peak2anno_db==0.1.8` and an external
-`bedtools` executable available in `PATH` when installed with pip.
+entry points. It requires `sjcab_peak2anno_db==0.1.8`. Pip installations do
+not require bedtools or pybedtools, but automatically use them when available.
+Without them, the built-in Python interval fallback is slower.
+
+Package versions are derived automatically from Git tags by `setuptools-scm`.
+Use a release tag such as `0.1.8` when building pip or conda packages; the
+conda workflow passes the checked-out Git tag to the recipe.
+
+![peak2anno subcommand overview](docs/peak2anno-subcommands.png)
 
 For conda installations, use the St. Jude CAB channel:
 
@@ -51,11 +58,11 @@ See [docs/peak2anno.md](https://github.com/stjudecab/sjcab_peak2anno/blob/main/d
 
 ## Install with pip
 
-Install `bedtools` separately and make sure it is on `PATH`:
+For faster pip runs, optionally install `bedtools` and `pybedtools`:
 
 ```bash
-bedtools --version
 python -m pip install sjcab_peak2anno
+bedtools --version  # optional acceleration check
 ```
 
 To install from a source checkout with test support:
@@ -91,7 +98,7 @@ The repository includes the minimal BED fixtures `tests_data/peaks.bed` and
 `tests_data/tss.bed`. After installing the package, run:
 
 ```bash
-bedtools --version
+bedtools --version  # optional; absence only makes annotation slower
 peak2anno peak2gene tests_data/peaks.bed \
   --tss-bed tests_data/tss.bed \
   --prom-enha-cutoffs 100bp,3kb \
@@ -268,9 +275,14 @@ directory. Use `-c/--feature-dir` to override this lookup.
 If the selected `--species`/`--ver` reference is not available, the command
 prints the exact `sjcab-peak2anno-db` command it proposes and asks:
 `Install database files now? [y/N]:` Type `y` or `yes` to run it and retry the
-annotation; any other answer leaves the run unchanged. For the default version,
-the proposal is `sjcab-peak2anno-db install-bed`; for an explicit version it is
-`sjcab-peak2anno-db download-bed SPECIES VERSION`. Feature commands propose
-`sjcab-peak2anno-db install gencode-feature`. An explicit `--tss-bed`,
+annotation; any other answer leaves the run unchanged. Add
+`--auto-install-db` to install without prompting, or `--no-auto-install-db` to
+disable installation. Automatic installation first installs
+`sjcab_peak2anno_db` from [PyPI](https://pypi.org/project/sjcab-peak2anno-db/)
+when its CLI is unavailable. For the default version, the proposal is
+`sjcab-peak2anno-db install-gencode-bed`; for an explicit version it is
+`sjcab-peak2anno-db download-gencode-bed SPECIES VERSION`. Feature commands
+use `install-gencode-feature` or `download-gencode-feature SPECIES VERSION`.
+An explicit `--tss-bed`,
 `--gene-bed`, or `--feature-dir` is never replaced automatically. In a pipe or
 other non-interactive session installation is declined safely.

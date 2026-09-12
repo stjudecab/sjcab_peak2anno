@@ -6,7 +6,10 @@ import argparse
 import csv
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
+from contextlib import contextmanager
+import fcntl
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,10 +26,14 @@ from .features import (
     resolve_features,
 )
 from .config import Settings, load_settings
-from .db import available_versions, db_root
+from .db import available_versions, db_root, gene_annotation_path
 from .peak2gene import PeakGeneConfig, annotate_peak2gene, resolve_tss_path
 from .loops import annotate_loop
 from .intervals import detect_output_format, read_regions, write_table
+from .runtime import detect_tools, warn_if_slow
+
+
+DB_PACKAGE = "sjcab_peak2anno_db==0.1.8"
 
 
 def add_common_feature_args(parser: argparse.ArgumentParser, settings: Settings) -> None:
@@ -59,6 +66,24 @@ def add_input_args(parser: argparse.ArgumentParser, help_text: str) -> None:
     """Add positional and short-option input forms."""
     parser.add_argument("input", nargs="?", type=Path, help=help_text)
     parser.add_argument("-i", "--input", dest="input_option", type=Path, metavar="INPUT", help="Input file.")
+
+
+def add_db_install_args(parser: argparse.ArgumentParser) -> None:
+    """Add automatic database installation controls."""
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--auto-install-db",
+        dest="auto_install_db",
+        action="store_true",
+        default=False,
+        help="Install missing gene/feature BEDs automatically.",
+    )
+    group.add_argument(
+        "--no-auto-install-db",
+        dest="auto_install_db",
+        action="store_false",
+        help="Do not install missing database files; fail with the missing path.",
+    )
 
 
 def add_gene_cutoff_args(parser: argparse.ArgumentParser, settings: Settings) -> None:
@@ -115,6 +140,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_input_args(peak2gene, "Input BED/TSV or region-text file.")
+    add_db_install_args(peak2gene)
     peak2gene.add_argument("-o", "--output", type=Path, help="Output TSV path; defaults to stdout.")
     peak2gene.add_argument("-s", "--species", default=settings.default_species, help="Species key, for example hg38 or mm10.")
     peak2gene.add_argument(
@@ -151,6 +177,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_common_feature_args(narrow, settings)
+    add_db_install_args(narrow)
     narrow.add_argument("--column-name", default="FeatureAssignment", help="Output annotation column name.")
     add_output_mode_arg(narrow, settings.feature_out, "Output max assignment, ordered percentages, or both.")
 
@@ -160,6 +187,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_common_feature_args(broad, settings)
+    add_db_install_args(broad)
     add_output_mode_arg(broad, settings.feature_out, "Output max assignment, ordered percentages, or both.")
 
     state = subparsers.add_parser(
@@ -168,6 +196,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_input_args(state, "Input BED/TSV or region-text file.")
+    add_db_install_args(state)
     state.add_argument("-s", "--states", type=Path, required=True, help="Chromatin state dense/segments BED.")
     state.add_argument("-o", "--output", type=Path, help="Output TSV path; defaults to stdout.")
     state.add_argument("--state2name", type=Path, help="Optional two-column state ID to label mapping.")
@@ -190,6 +219,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     ):
         loop = subparsers.add_parser(name, help=help_text, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         add_input_args(loop, "BEDPE input.")
+        add_db_install_args(loop)
         loop.add_argument("-o", "--output", type=Path, help="Output path; defaults to stdout.")
         loop.add_argument("--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
         loop.add_argument("--loop-columns", default="0,1,2,3,4,5", help="BEDPE coordinate columns.")
@@ -212,6 +242,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     combined = subparsers.add_parser("combined", help="Run multiple annotations and merge their columns.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     combined.add_argument("--commands", action="append", choices=["peak2gene", "narrow2feature", "broad2feature", "peak2state"], required=True, help="Annotation step; repeat for multiple steps.")
     add_input_args(combined, "Input BED/TSV or region-text file.")
+    add_db_install_args(combined)
     combined.add_argument("-o", "--output", type=Path, help="Output path; defaults to stdout.")
     combined.add_argument("-s", "--species", default=settings.default_species, help="Species key.")
     combined.add_argument("-d", "--db-path", default=settings.db_path, help="Database root.")
@@ -541,21 +572,86 @@ def database_install_command(args: argparse.Namespace) -> Optional[list[str]]:
 
     if needs_gene and not has_gene_override:
         if version in {"def", "default"}:
-            command = ["sjcab-peak2anno-db", "install-bed"]
+            command = ["sjcab-peak2anno-db", "install-gencode-bed"]
             if data_dir:
                 command.extend(["-d", data_dir])
         else:
-            command = ["sjcab-peak2anno-db", "download-bed", str(species), str(version)]
+            command = ["sjcab-peak2anno-db", "download-gencode-bed", str(species), str(version)]
             if data_dir:
                 command.extend(["-o", data_dir])
         return command
     if needs_feature and not has_feature_override:
         # Feature files are generated by the database package's feature command.
-        command = ["sjcab-peak2anno-db", "install", "gencode-feature"]
-        if data_dir:
-            command.extend(["-d", data_dir])
+        if version in {"def", "default"}:
+            command = ["sjcab-peak2anno-db", "install-gencode-feature"]
+            if data_dir:
+                command.extend(["-d", data_dir])
+        else:
+            command = ["sjcab-peak2anno-db", "download-gencode-feature", str(species), str(version)]
+            if data_dir:
+                command.extend(["-o", data_dir])
         return command
     return None
+
+
+def database_references_present(args: argparse.Namespace) -> bool:
+    """Return whether all implicit gene and feature references now exist."""
+    commands = getattr(args, "commands", [getattr(args, "command", "")])
+    if isinstance(commands, str):
+        commands = [commands]
+    needs_gene = "peak2gene" in commands or "loop2gene" in commands
+    needs_feature = any(command in {"narrow2feature", "broad2feature", "loop2feature"} for command in commands)
+    if needs_gene and getattr(args, "gene_bed", None) is None and getattr(args, "tss_bed", None) is None:
+        gene_annotation_path(
+            str(args.species),
+            version=str(args.species_version),
+            isoform_set=str(args.isoform_version),
+            root_path=getattr(args, "db_path", None),
+        )
+    if needs_feature and getattr(args, "feature_dir", None) is None and getattr(args, "features", None) is None:
+        resolve_features(
+            FeatureConfig(
+                input_path=args.input,
+                output_path=getattr(args, "output", None),
+                species=str(args.species),
+                db_path=getattr(args, "db_path", None),
+            )
+        )
+    return True
+
+
+def database_lock_path(args: argparse.Namespace) -> Path:
+    """Return the per-species/version installation lock path."""
+    root = db_root(getattr(args, "db_path", None))
+    species = str(getattr(args, "species", "unknown"))
+    version = str(getattr(args, "species_version", "def"))
+    safe_key = "".join(char if char.isalnum() or char in "._-" else "_" for char in f"{species}-{version}")
+    return root / ".locks" / f"{safe_key}.lock"
+
+
+@contextmanager
+def database_install_lock(args: argparse.Namespace):
+    """Serialize automatic installation for one species/version pair."""
+    path = database_lock_path(args)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def ensure_database_cli() -> str:
+    """Return the DB CLI, installing the PyPI package when necessary."""
+    command = shutil.which("sjcab-peak2anno-db")
+    if command:
+        return command
+    subprocess.run([sys.executable, "-m", "pip", "install", DB_PACKAGE], check=True)
+    command = shutil.which("sjcab-peak2anno-db")
+    if not command:
+        raise FileNotFoundError("sjcab-peak2anno-db was not found after installing sjcab_peak2anno_db")
+    return command
 
 
 def offer_database_install(args: argparse.Namespace, missing: Exception) -> bool:
@@ -569,19 +665,28 @@ def offer_database_install(args: argparse.Namespace, missing: Exception) -> bool
     print(f"peak2anno: selected database reference was not found: {missing}", file=sys.stderr)
     print("You can install it with:", file=sys.stderr)
     print(f"  {command_text}", file=sys.stderr)
-    if not sys.stdin.isatty():
+    automatic = bool(getattr(args, "auto_install_db", False))
+    if not automatic and not sys.stdin.isatty():
         print("peak2anno: non-interactive input; installation declined", file=sys.stderr)
         return False
+    if not automatic:
+        try:
+            answer = input("Install database files now? [y/N]: ").strip().lower()
+        except EOFError:
+            return False
+        if answer not in {"y", "yes"}:
+            print("peak2anno: installation declined", file=sys.stderr)
+            return False
     try:
-        answer = input("Install database files now? [y/N]: ").strip().lower()
-    except EOFError:
-        return False
-    if answer not in {"y", "yes"}:
-        print("peak2anno: installation declined", file=sys.stderr)
-        return False
-    try:
-        subprocess.run(command, check=True)
-    except (OSError, subprocess.CalledProcessError) as exc:
+        with database_install_lock(args):
+            try:
+                database_references_present(args)
+                print("peak2anno: database references became available while waiting for the installer", file=sys.stderr)
+                return True
+            except FileNotFoundError:
+                db_cli = ensure_database_cli()
+                subprocess.run([db_cli, *command[1:]], check=True)
+    except (OSError, subprocess.CalledProcessError, FileNotFoundError) as exc:
         print(f"peak2anno: database installation failed: {exc}", file=sys.stderr)
         return False
     return True
@@ -593,6 +698,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser(settings)
     normalized = normalize_argv(argv)
     args = parser.parse_args(normalized)
+    warn_if_slow(detect_tools())
     apply_settings(args, normalized or [], settings)
     if args.command != "list-db":
         if getattr(args, "input", None) is None:

@@ -170,8 +170,12 @@ def gene_annotation_path(
             if path.is_file():
                 return path
 
+    version_names = [version]
+    if version in {"default", "def"}:
+        version_names = ["def", "default"]
     candidates = [
-        root / species / version / filename,
+        *(root / "bed" / species / name / filename for name in version_names),
+        *(root / species / name / filename for name in version_names),
         root / species / f"{version}.{isoform_set}.gene.bed",
         root / species / isoform_set / f"{version}.gene.bed",
     ]
@@ -216,6 +220,8 @@ def candidate_feature_dirs(species: str, root_path: Optional[str] = None) -> Lis
     package_root = Path(__file__).resolve().parents[2]
     cwd = Path.cwd()
     candidates = [
+        root / "feature" / species,
+        root / "features" / species,
         root / species / "features",
         root / species,
     ]
@@ -223,5 +229,10 @@ def candidate_feature_dirs(species: str, root_path: Optional[str] = None) -> Lis
     if species_root.is_dir():
         for version_root in sorted(path for path in species_root.iterdir() if path.is_dir()):
             candidates.extend([version_root / "features", version_root])
+    for feature_root in (root / "feature" / species, root / "features" / species):
+        if feature_root.is_dir():
+            for version_root in sorted(path for path in feature_root.iterdir() if path.is_dir()):
+                candidates.append(version_root)
+                candidates.extend(path for path in sorted(version_root.iterdir()) if path.is_dir())
     candidates.extend([cwd / "annotations" / species, package_root / "annotations" / species])
     return candidates

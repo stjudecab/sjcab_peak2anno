@@ -261,7 +261,7 @@ def test_missing_database_reference_can_be_declined(
         main(["peak2gene", str(peaks), "-s", "missing", "--ver", "v9", "-d", str(tmp_path / "db")])
 
     error = capsys.readouterr().err
-    assert "sjcab-peak2anno-db download-bed missing v9" in error
+    assert "sjcab-peak2anno-db download-gencode-bed missing v9" in error
     assert "installation declined" in error
 
 
@@ -277,10 +277,11 @@ def test_missing_database_reference_can_be_installed(
 
     def fake_install(command: list[str], check: bool) -> subprocess.CompletedProcess[str]:
         assert check is True
-        assert command[:4] == ["sjcab-peak2anno-db", "download-bed", "missing", "v9"]
+        assert command[1:5] == ["sjcab-peak2anno-db", "download-gencode-bed", "missing", "v9"]
         write(db / "missing" / "v9" / "all.gene.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\n")
         return subprocess.CompletedProcess(command, 0)
 
+    monkeypatch.setattr("peak2anno.cli.shutil.which", lambda _name: "/fake/sjcab-peak2anno-db")
     monkeypatch.setattr("peak2anno.cli.subprocess.run", fake_install)
     assert main(["peak2gene", str(peaks), "-s", "missing", "--ver", "v9", "-d", str(db)]) == 0
     assert "GeneA" in capsys.readouterr().out

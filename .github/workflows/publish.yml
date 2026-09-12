@@ -61,6 +61,7 @@ jobs:
         shell: bash -el {0}
         run: |
           conda install --yes --override-channels -c conda-forge -c bioconda conda-build anaconda-client
+          export GIT_DESCRIBE_TAG="$(git describe --tags --exact-match 2>/dev/null || git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0)"
           conda-build "${GITHUB_WORKSPACE}/conda-recipe" \
             --output-folder conda-channel \
             --channel stjudecab \

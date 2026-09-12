@@ -19,6 +19,8 @@
 !**/*.yaml
 !**/*.json
 !**/*.lock
+!**/*.png
+!**/*.txt
 !tests_data/*.bed
 !**/.env*
 !**/Dockerfile
@@ -47,5 +49,6 @@ build/
 .hf_home/
 .ruff_cache/
 .pytest_cache/
+src/peak2anno/_version.py
 .codex/
 .agents/

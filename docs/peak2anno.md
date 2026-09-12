@@ -3,8 +3,11 @@
 `sjcab_peak2anno` is a small Python command-line package for annotating BED-like peak files.
 It exposes the same CLI through `peak2anno` and `sjcab-peak2anno`.
 
-The pip package depends on `sjcab_peak2anno_db==0.1.8`. It also requires the
-`bedtools` executable to be installed separately and available in `PATH`.
+![peak2anno subcommand overview](https://github.com/stjudecab/sjcab_peak2anno/blob/main/docs/peak2anno-subcommands.png)
+
+The pip package depends on `sjcab_peak2anno_db==0.1.8`. Pip does not require
+`bedtools` or `pybedtools`; when they are unavailable,
+peak2anno uses a slower Python interval fallback. Conda installs both.
 Python 3.7 or newer is supported; Python 3.6 is not.
 
 ## Database
