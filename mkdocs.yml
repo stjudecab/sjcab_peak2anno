@@ -9,7 +9,10 @@ theme:
 
 nav:
   - Home: index.md
-  - Command reference: peak2anno.md
+  - Installation: install.md
+  - Configuration: configuration.md
+  - Commands: commands.md
+  - Input and output: input-output.md
   - Changelog: changelog.md
 
 markdown_extensions:

@@ -5,7 +5,8 @@ features, and chromatin states.
 
 ![peak2anno subcommand overview](peak2anno-subcommands.png)
 
-Use the [command reference](peak2anno.md) for installation, input/output
+Use the [installation](install.md), [configuration](configuration.md),
+[commands](commands.md), and [input/output](input-output.md) pages for setup,
 formats, configuration, and command examples.
 
 Source repository: [stjudecab/sjcab_peak2anno](https://github.com/stjudecab/sjcab_peak2anno).
