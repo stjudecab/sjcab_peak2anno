@@ -5,6 +5,12 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or tag to publish"
+        required: true
+        default: "master"
+        type: string
 
 permissions:
   contents: read
@@ -16,6 +22,8 @@ jobs:
     environment: pypi
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -32,6 +40,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: conda-incubator/setup-miniconda@v3
         with:
           activate-environment: publish
