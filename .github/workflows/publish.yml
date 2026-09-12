@@ -54,7 +54,8 @@ jobs:
           auto-update-conda: true
           activate-environment: publish
           python-version: "3.12"
-          channels: conda-forge
+          channels: "bioconda,conda-forge"
+          channel-priority: strict
 
       - name: Build Conda package
         shell: bash -el {0}
@@ -63,6 +64,7 @@ jobs:
           conda-build "${GITHUB_WORKSPACE}/conda-recipe" \
             --output-folder conda-channel \
             --channel stjudecab \
+            --channel bioconda \
             --channel conda-forge
       - name: Upload to the stjudecab channel
         shell: bash -el {0}
