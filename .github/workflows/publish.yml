@@ -53,7 +53,7 @@ jobs:
         shell: bash -el {0}
         run: |
           conda install --yes conda-build anaconda-client
-          conda build conda-recipe \
+          conda-build conda-recipe \
             --output-folder conda-bld \
             --channel stjudecab \
             --channel conda-forge
