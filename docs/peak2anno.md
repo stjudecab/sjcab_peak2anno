@@ -3,7 +3,7 @@
 `sjcab_peak2anno` is a small Python command-line package for annotating BED-like peak files.
 It exposes the same CLI through `peak2anno` and `sjcab-peak2anno`.
 
-The pip package depends on `sjcab_peak2anno_db==0.1.7`. It also requires the
+The pip package depends on `sjcab_peak2anno_db==0.1.8`. It also requires the
 `bedtools` executable to be installed separately and available in `PATH`.
 Python 3.7 or newer is supported; Python 3.6 is not.
 
@@ -18,7 +18,7 @@ The runtime database root is resolved in this order:
 Install the database package from the St. Jude CAB channel when building an environment:
 
 ```bash
-conda install -c stjudecab sjcab_peak2anno sjcab_peak2anno_db=0.1.7 bedtools pybedtools
+conda install -c stjudecab sjcab_peak2anno sjcab_peak2anno_db=0.1.8 bedtools pybedtools
 ```
 
 The local DB manifest currently marks these defaults:

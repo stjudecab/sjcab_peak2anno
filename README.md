@@ -4,13 +4,13 @@
 features, and chromatin states.
 
 The package provides both `peak2anno` and `sjcab-peak2anno` command-line
-entry points. It requires `sjcab_peak2anno_db==0.1.7` and an external
+entry points. It requires `sjcab_peak2anno_db==0.1.8` and an external
 `bedtools` executable available in `PATH` when installed with pip.
 
 For conda installations, use the St. Jude CAB channel:
 
 ```bash
-conda install -c stjudecab sjcab_peak2anno sjcab_peak2anno_db=0.1.7 bedtools pybedtools
+conda install -c stjudecab sjcab_peak2anno sjcab_peak2anno_db=0.1.8 bedtools pybedtools
 ```
 
 ## Configuration defaults
@@ -68,7 +68,7 @@ python -m pytest -q
 ## Install with conda
 
 ```bash
-conda install -c stjudecab sjcab_peak2anno sjcab_peak2anno_db=0.1.7 bedtools pybedtools
+conda install -c stjudecab sjcab_peak2anno sjcab_peak2anno_db=0.1.8 bedtools pybedtools
 ```
 
 ## Test from a source checkout
@@ -121,7 +121,7 @@ tests_data/tss.bed
 ```
 
 Runtime annotation data comes from the separately installed
-`sjcab_peak2anno_db==0.1.7` package or from `--db-path`/`SJCAB_PEAK2ANNO_DB_PATH`.
+`sjcab_peak2anno_db==0.1.8` package or from `--db-path`/`SJCAB_PEAK2ANNO_DB_PATH`.
 
 ## Output and run log
 

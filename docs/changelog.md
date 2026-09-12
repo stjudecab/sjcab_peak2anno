@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.8 / 2026-09-11
+
+- Updated the package and conda dependency to `sjcab_peak2anno_db` 0.1.8.
+
 ## 2026-09-10
 
 - Added separate strand-aware upstream/downstream promoter cutoffs for gene annotation.

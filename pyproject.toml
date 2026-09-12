@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sjcab_peak2anno"
-version = "0.1.7"
+version = "0.1.8"
 description = "Annotate genomic peaks to genes, genomic features, and chromatin states."
 readme = "README.md"
 requires-python = ">=3.7"
@@ -28,7 +28,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Bio-Informatics"
 ]
 dependencies = [
-    "sjcab_peak2anno_db==0.1.7",
+    "sjcab_peak2anno_db==0.1.8",
 ]
 
 [project.urls]
