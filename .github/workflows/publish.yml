@@ -29,7 +29,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       - name: Build distributions
         run: |
@@ -53,14 +53,14 @@ jobs:
         with:
           auto-update-conda: true
           activate-environment: publish
-          python-version: "3.12"
+          python-version: "3.11"
           channels: "bioconda,conda-forge"
           channel-priority: strict
 
       - name: Build Conda package
         shell: bash -el {0}
         run: |
-          conda install --yes conda-build anaconda-client
+          conda install --yes --override-channels -c conda-forge -c bioconda conda-build anaconda-client
           conda-build "${GITHUB_WORKSPACE}/conda-recipe" \
             --output-folder conda-channel \
             --channel stjudecab \
