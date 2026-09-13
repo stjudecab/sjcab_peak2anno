@@ -68,6 +68,7 @@ class FeatureConfig:
     region_column: int = 0
     output_format: str = "txt"
     output_mode: str = "legacy"
+    txt_delimiter: str = "auto"
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,7 @@ class StateConfig:
     region_column: int = 0
     output_format: str = "txt"
     output_mode: str = "legacy"
+    txt_delimiter: str = "auto"
 
 
 def read_list_or_csv(value: str, base_dir: Optional[Path] = None) -> List[str]:
@@ -296,8 +298,8 @@ def write_count_summary(
 
 def annotate_narrow_feature(config: FeatureConfig) -> Tuple[Path, Path]:
     """Annotate each peak to one prioritized genomic feature."""
-    output_format = config.output_format if config.output_format != "auto" else detect_output_format(config.input_path, config.header, config.input_format, config.columns, config.region_column)
-    header, regions = read_regions(config.input_path, header=config.header, input_format=config.input_format, columns=config.columns, region_column=config.region_column)
+    output_format = config.output_format if config.output_format != "auto" else detect_output_format(config.input_path, config.header, config.input_format, config.columns, config.region_column, config.txt_delimiter)
+    header, regions = read_regions(config.input_path, header=config.header, input_format=config.input_format, columns=config.columns, region_column=config.region_column, txt_delimiter=config.txt_delimiter)
     specs = resolve_features(config)
     indexes = feature_indexes(specs)
     cutoff = parse_overlap_cutoff(config.overlap_cutoff)
@@ -400,8 +402,8 @@ def broad_rows(
 
 def annotate_broad_feature(config: FeatureConfig) -> Tuple[Path, Path]:
     """Annotate each peak with per-feature overlap fractions."""
-    output_format = config.output_format if config.output_format != "auto" else detect_output_format(config.input_path, config.header, config.input_format, config.columns, config.region_column)
-    header, regions = read_regions(config.input_path, header=config.header, input_format=config.input_format, columns=config.columns, region_column=config.region_column)
+    output_format = config.output_format if config.output_format != "auto" else detect_output_format(config.input_path, config.header, config.input_format, config.columns, config.region_column, config.txt_delimiter)
+    header, regions = read_regions(config.input_path, header=config.header, input_format=config.input_format, columns=config.columns, region_column=config.region_column, txt_delimiter=config.txt_delimiter)
     specs = resolve_features(config)
     indexes = feature_indexes(specs)
     cutoff = parse_overlap_cutoff(config.overlap_cutoff)
@@ -466,8 +468,8 @@ def load_state_index(states_path: Path, state_names: Mapping[str, str]) -> Order
 
 def annotate_peak_state(config: StateConfig) -> Tuple[Path, Path]:
     """Annotate peaks with chromatin-state overlap fractions."""
-    output_format = config.output_format if config.output_format != "auto" else detect_output_format(config.input_path, config.header, config.input_format, config.columns, config.region_column)
-    header, regions = read_regions(config.input_path, header=config.header, input_format=config.input_format, columns=config.columns, region_column=config.region_column)
+    output_format = config.output_format if config.output_format != "auto" else detect_output_format(config.input_path, config.header, config.input_format, config.columns, config.region_column, config.txt_delimiter)
+    header, regions = read_regions(config.input_path, header=config.header, input_format=config.input_format, columns=config.columns, region_column=config.region_column, txt_delimiter=config.txt_delimiter)
     state_names = read_state_names(config.state2name)
     indexes = load_state_index(config.states_path, state_names)
     cutoff = parse_overlap_cutoff(config.overlap_cutoff)

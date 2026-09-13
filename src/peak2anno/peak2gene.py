@@ -43,6 +43,7 @@ class PeakGeneConfig:
     columns: Optional[Tuple[int, int, int]] = None
     region_column: int = 0
     output_format: str = "txt"
+    txt_delimiter: str = "auto"
 
 
 def resolve_tss_records(config: PeakGeneConfig) -> List[BedRecord]:
@@ -204,7 +205,8 @@ def annotate_peak2gene(config: PeakGeneConfig) -> Path:
     """
     upstream_cutoff, enhancer_cutoff, downstream_cutoff = parse_prom_enha_cutoffs(config.prom_enha_cutoffs)
     output_format = config.output_format if config.output_format != "auto" else detect_output_format(
-        config.input_path, config.header, config.input_format, config.columns, config.region_column
+        config.input_path, config.header, config.input_format, config.columns, config.region_column,
+        config.txt_delimiter,
     )
     header, regions = read_regions(
         config.input_path,
@@ -212,6 +214,7 @@ def annotate_peak2gene(config: PeakGeneConfig) -> Path:
         input_format=config.input_format,
         columns=config.columns,
         region_column=config.region_column,
+        txt_delimiter=config.txt_delimiter,
     )
     tss_records = resolve_tss_records(config)
     index = IntervalIndex(tss_records)

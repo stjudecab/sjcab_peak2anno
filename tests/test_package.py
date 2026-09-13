@@ -310,6 +310,14 @@ def test_region_text_accepts_header_and_common_delimiters(tmp_path: Path) -> Non
     assert (regions[0].chrom, regions[0].start, regions[0].end) == ("chr1", 100, 200)
 
 
+def test_region_text_accepts_custom_delimiter(tmp_path: Path) -> None:
+    """Text input should parse the configured custom region delimiter."""
+    path = write(tmp_path / "regions.txt", "region\nchr1|100|200\n")
+    header, regions = read_regions(path, input_format="txt", txt_delimiter="|")
+    assert header == ["region"]
+    assert regions[0].region_name == "chr1:100-200"
+
+
 def test_loop2gene_merges_two_anchor_annotations(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     """loop2gene should annotate both BEDPE anchors in one table."""
     loops = write(tmp_path / "loops.bedpe", "chr1\t50\t150\tchr1\t300\t400\n")

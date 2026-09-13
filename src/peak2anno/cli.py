@@ -38,7 +38,7 @@ DB_PACKAGE = "sjcab_peak2anno_db==0.1.8"
 
 def add_common_feature_args(parser: argparse.ArgumentParser, settings: Settings) -> None:
     """Add arguments shared by narrow2feature and broad2feature."""
-    add_input_args(parser, "Input BED/TSV or region-text file.")
+    add_input_args(parser, "Input BED/TSV or region-text file.", settings.txt_delimiter)
     parser.add_argument("-o", "--output", type=Path, help="Output TSV path; defaults to stdout.")
     parser.add_argument("-s", "--species", default=settings.default_species, help="Species key, for example hg38 or mm10.")
     parser.add_argument("-d", "--db-path", default=settings.db_path, help="Database root; defaults to rc/env or ~/.sjcab_peak2anno_db.")
@@ -62,10 +62,11 @@ def add_common_feature_args(parser: argparse.ArgumentParser, settings: Settings)
     parser.add_argument("--plot", action="store_true", help="Write PNG/PDF bar and pie plots for summary counts.")
 
 
-def add_input_args(parser: argparse.ArgumentParser, help_text: str) -> None:
+def add_input_args(parser: argparse.ArgumentParser, help_text: str, txt_delimiter: str = "auto") -> None:
     """Add positional and short-option input forms."""
     parser.add_argument("input", nargs="?", type=Path, help=help_text)
     parser.add_argument("-i", "--input", dest="input_option", type=Path, metavar="INPUT", help="Input file.")
+    parser.set_defaults(txt_delimiter=txt_delimiter)
 
 
 def add_db_install_args(parser: argparse.ArgumentParser) -> None:
@@ -139,7 +140,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         help="Annotate peaks to nearby and closest genes.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    add_input_args(peak2gene, "Input BED/TSV or region-text file.")
+    add_input_args(peak2gene, "Input BED/TSV or region-text file.", settings.txt_delimiter)
     add_db_install_args(peak2gene)
     peak2gene.add_argument("-o", "--output", type=Path, help="Output TSV path; defaults to stdout.")
     peak2gene.add_argument("-s", "--species", default=settings.default_species, help="Species key, for example hg38 or mm10.")
@@ -195,7 +196,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         help="Report per-state chromatin overlap fractions.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    add_input_args(state, "Input BED/TSV or region-text file.")
+    add_input_args(state, "Input BED/TSV or region-text file.", settings.txt_delimiter)
     add_db_install_args(state)
     state.add_argument("-s", "--states", type=Path, required=True, help="Chromatin state dense/segments BED.")
     state.add_argument("-o", "--output", type=Path, help="Output TSV path; defaults to stdout.")
@@ -218,7 +219,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         ("loop2state", "Annotate both anchors of BEDPE loops to chromatin states."),
     ):
         loop = subparsers.add_parser(name, help=help_text, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-        add_input_args(loop, "BEDPE input.")
+        add_input_args(loop, "BEDPE input.", settings.txt_delimiter)
         add_db_install_args(loop)
         loop.add_argument("-o", "--output", type=Path, help="Output path; defaults to stdout.")
         loop.add_argument("--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
@@ -241,7 +242,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
 
     combined = subparsers.add_parser("combined", help="Run multiple annotations and merge their columns.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     combined.add_argument("--commands", action="append", choices=["peak2gene", "narrow2feature", "broad2feature", "peak2state"], required=True, help="Annotation step; repeat for multiple steps.")
-    add_input_args(combined, "Input BED/TSV or region-text file.")
+    add_input_args(combined, "Input BED/TSV or region-text file.", settings.txt_delimiter)
     add_db_install_args(combined)
     combined.add_argument("-o", "--output", type=Path, help="Output path; defaults to stdout.")
     combined.add_argument("-s", "--species", default=settings.default_species, help="Species key.")
@@ -299,6 +300,7 @@ def run(args: argparse.Namespace) -> Optional[Path]:
                 columns=parse_columns(args.columns),
                 region_column=args.region_column,
                 output_format=args.output_format,
+                txt_delimiter=args.txt_delimiter,
             )
         )
     if args.command == "narrow2feature":
@@ -321,6 +323,7 @@ def run(args: argparse.Namespace) -> Optional[Path]:
                 region_column=args.region_column,
                 output_format=args.output_format,
                 output_mode=args.output_mode,
+                txt_delimiter=args.txt_delimiter,
             )
         )
         return output
@@ -343,6 +346,7 @@ def run(args: argparse.Namespace) -> Optional[Path]:
                 region_column=args.region_column,
                 output_format=args.output_format,
                 output_mode=args.output_mode,
+                txt_delimiter=args.txt_delimiter,
             )
         )
         return output
@@ -362,6 +366,7 @@ def run(args: argparse.Namespace) -> Optional[Path]:
                 region_column=args.region_column,
                 output_format=args.output_format,
                 output_mode=args.output_mode,
+                txt_delimiter=args.txt_delimiter,
             )
         )
         return output
@@ -419,6 +424,7 @@ def run_combined(args: argparse.Namespace) -> Optional[Path]:
         input_format=args.input_format,
         columns=parse_columns(args.columns),
         region_column=args.region_column,
+        txt_delimiter=args.txt_delimiter,
     )
     with tempfile.TemporaryDirectory(prefix="peak2anno-combined-") as temp:
         temp_root = Path(temp)
@@ -454,7 +460,7 @@ def run_combined(args: argparse.Namespace) -> Optional[Path]:
             for _header, rows in tables[1:]:
                 row.extend(rows[row_index][len(input_header):])
             output_rows.append(row)
-        output_format = args.output_format if args.output_format != "auto" else detect_output_format(args.input, args.header, args.input_format, parse_columns(args.columns), args.region_column)
+        output_format = args.output_format if args.output_format != "auto" else detect_output_format(args.input, args.header, args.input_format, parse_columns(args.columns), args.region_column, args.txt_delimiter)
         write_table(args.output, output_header, output_rows, include_header=output_format == "txt")
     return args.output
 

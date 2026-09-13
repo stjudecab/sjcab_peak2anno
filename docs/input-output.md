@@ -22,6 +22,21 @@ chr2^300=450
 format with `bed`, `txt`, or `txtnohead`; use `--region-column` for another
 text column.
 
+For text input, the region coordinate delimiter can be selected with the
+`SJCAB_PEAK2ANNO_TXT_DELIMITER` environment variable or the same setting in
+the RC file. The default is `auto`, which recognizes the delimiters shown
+above. Set it to a literal delimiter such as `|` when regions use a custom
+form:
+
+```bash
+SJCAB_PEAK2ANNO_TXT_DELIMITER='|' peak2anno peak2gene regions.txt \
+  --input-format txt --tss-bed tests_data/tss.bed
+```
+
+With that setting, the text region is written as `chr1|100|200`. The setting
+only changes parsing of the chromosome/start/end expression; tabs or spaces
+still separate columns in a text table.
+
 ## Output formats
 
 `--output-format` accepts `auto`, `bed`, `bedpe`, `txt`, and `txtnohead`.

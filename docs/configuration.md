@@ -20,6 +20,7 @@ path and writes supported settings as commented examples.
 # SJCAB_PEAK2ANNO_ISO_SET=all
 # SJCAB_PEAK2ANNO_2FEATURE_OUT=max
 # SJCAB_PEAK2ANNO_2STATE_OUT=max,percent
+# SJCAB_PEAK2ANNO_TXT_DELIMITER=auto
 ```
 
 Environment variables with the same names override RC values. Species/version
@@ -37,6 +38,7 @@ cutoff overrides use case-sensitive names such as
 | `SJCAB_PEAK2ANNO_ISO_SET` | `all` | `all` or `deduplong` gene BED |
 | `SJCAB_PEAK2ANNO_2FEATURE_OUT` | `max` | Feature output mode |
 | `SJCAB_PEAK2ANNO_2STATE_OUT` | `max,percent` | State output mode |
+| `SJCAB_PEAK2ANNO_TXT_DELIMITER` | `auto` | Delimiter inside text regions such as `chr1:100-200` |
 
 Output modes are `max`, `percent`, `max,percent`, or `percent,max`.
 

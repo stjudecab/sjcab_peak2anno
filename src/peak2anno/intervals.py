@@ -168,7 +168,16 @@ def is_int(text: str) -> bool:
     return True
 
 
-def parse_region(text: str) -> Tuple[str, int, int]:
+def _region_matches(text: str, delimiter: str = "auto") -> bool:
+    """Return whether text contains a valid region using the selected delimiter."""
+    if delimiter and delimiter != "auto":
+        separator = delimiter.encode().decode("unicode_escape")
+        fields = text.split(separator)
+        return len(fields) == 3 and all(field.isdigit() for field in fields[1:])
+    return REGION_RE.match(text) is not None
+
+
+def parse_region(text: str, delimiter: str = "auto") -> Tuple[str, int, int]:
     """Parse a region string with common delimiters, such as ``chr1:100-200``.
 
     Args:
@@ -180,7 +189,13 @@ def parse_region(text: str) -> Tuple[str, int, int]:
     Raises:
         ValueError: If the text is not a supported region string.
     """
-    match = REGION_RE.match(text)
+    if delimiter and delimiter != "auto":
+        fields = text.split(delimiter.encode().decode("unicode_escape"))
+        if len(fields) == 3 and all(field.isdigit() for field in fields[1:]):
+            return fields[0], int(fields[1]), int(fields[2])
+        match = None
+    else:
+        match = REGION_RE.match(text)
     if not match:
         raise ValueError(f"Expected region string like chr1:100-200, found {text!r}")
     chrom, start, end = match.groups()
@@ -220,6 +235,7 @@ def read_regions(
     input_format: str = "auto",
     columns: Optional[Tuple[int, int, int]] = None,
     region_column: int = 0,
+    txt_delimiter: str = "auto",
 ) -> Tuple[List[str], List[InputRegion]]:
     """Read BED or TSV rows and extract genomic coordinates.
 
@@ -258,11 +274,11 @@ def read_regions(
     if input_format == "bed":
         has_header = header == "yes" or (header == "auto" and not inferred_bed)
     elif input_format in {"txt", "txtnohead"}:
-        has_header = input_format == "txt" and (header == "yes" or (header == "auto" and not REGION_RE.match(first[region_column])))
+        has_header = input_format == "txt" and (header == "yes" or (header == "auto" and not _region_matches(first[region_column], txt_delimiter)))
     else:
         has_header = header == "yes" or (
             header == "auto"
-            and not (inferred_bed or REGION_RE.match(first[region_column]))
+            and not (inferred_bed or _region_matches(first[region_column], txt_delimiter))
         )
     if has_header:
         out_header = first
@@ -289,7 +305,7 @@ def read_regions(
         if len(row) < len(out_header):
             row = row + ["."] * (len(out_header) - len(row))
         if region_idx is not None:
-            chrom, start, end = parse_region(row[region_idx])
+            chrom, start, end = parse_region(row[region_idx], txt_delimiter)
         elif chrom_idx is not None and start_idx is not None and end_idx is not None:
             chrom = row[chrom_idx]
             start = int(row[start_idx])
@@ -310,6 +326,7 @@ def detect_output_format(
     input_format: str = "auto",
     columns: Optional[Tuple[int, int, int]] = None,
     region_column: int = 0,
+    txt_delimiter: str = "auto",
 ) -> str:
     """Return the default output mode implied by an input file."""
     if input_format == "bed":
@@ -330,7 +347,7 @@ def detect_output_format(
             return "txt"
         if header == "no":
             return "txtnohead"
-        return "txt" if not REGION_RE.match(first[region_column]) else "txtnohead"
+        return "txt" if not _region_matches(first[region_column], txt_delimiter) else "txtnohead"
     coordinate_hint = columns or (0, 1, 2)
     is_bed = (
         max(coordinate_hint) < len(first)
@@ -347,7 +364,7 @@ def detect_output_format(
         return "txt"
     if header == "no":
         return "txtnohead"
-    return "txt" if not REGION_RE.match(first[region_column]) else "txtnohead"
+    return "txt" if not _region_matches(first[region_column], txt_delimiter) else "txtnohead"
 
 
 def read_bed_records(
