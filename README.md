@@ -4,9 +4,8 @@
 chromatin states. It provides the `peak2anno` and `sjcab-peak2anno` command
 line interfaces.
 
-![peak2anno subcommand overview](docs/peak2anno-subcommands.png)
+![peak2anno subcommand overview](docs/peak2anno-subcommands.svg)
 
-Editable source: [peak2anno-subcommands.svg](https://github.com/stjudecab/sjcab_peak2anno/blob/master/docs/peak2anno-subcommands.svg).
 
 ## Documentation
 
