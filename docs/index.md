@@ -3,7 +3,7 @@
 `sjcab_peak2anno` annotates genomic peak BED files to nearby genes, genomic
 features, and chromatin states.
 
-![peak2anno subcommand overview](peak2anno-subcommands.png)
+![peak2anno subcommand overview](peak2anno-subcommands.svg)
 
 Use the [installation](install.md), [configuration](configuration.md),
 [commands](commands.md), and [input/output](input-output.md) pages for setup,

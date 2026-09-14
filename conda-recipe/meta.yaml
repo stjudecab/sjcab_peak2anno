@@ -9,8 +9,8 @@ source:
   path: ..
 
 build:
-  noarch: python
   number: 0
+  noarch: python
   script: {{ PYTHON }} -m pip install . -vv --no-deps
   entry_points:
     - peak2anno = peak2anno.cli:main
@@ -22,10 +22,11 @@ requirements:
     - python >=3.7
     - pip
     - setuptools >=61
+    - setuptools-scm >=8
     - wheel
   run:
     - python >=3.7
-    - stjudecab::sjcab_peak2anno_db ==0.1.8
+    - stjudecab::sjcab_peak2anno_db
     - bedtools >2.16.2
     - pybedtools
 
@@ -40,8 +41,8 @@ test:
 
 about:
   home: https://github.com/stjudecab/sjcab_peak2anno
+  doc_url: https://sjcab-peak2anno.readthedocs.io/
   dev_url: https://github.com/stjudecab/sjcab_peak2anno
-  doc_url: https://github.com/stjudecab/sjcab_peak2anno/blob/main/README.md
   issue_url: https://github.com/stjudecab/sjcab_peak2anno/issues
   license: Apache-2.0
   summary: Annotate genomic peaks to genes, genomic features, and chromatin states.

@@ -35,6 +35,7 @@ dependencies = [
 Homepage = "https://github.com/stjudecab/sjcab_peak2anno"
 Repository = "https://github.com/stjudecab/sjcab_peak2anno"
 Issues = "https://github.com/stjudecab/sjcab_peak2anno/issues"
+Doc = "https://sjcab-peak2anno.readthedocs.io"
 
 [project.optional-dependencies]
 plot = ["matplotlib>=3.5"]
