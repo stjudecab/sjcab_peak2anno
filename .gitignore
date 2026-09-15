@@ -1,11 +1,11 @@
-# 1. 忽略所有文件和文件夹
+# 1. Ignore All
 *
 
-# 2. 不忽略文件夹（必须，否则 Git 无法进入子目录寻找白名单文件）
+# 2. Don't Ignore Subfolder(must or Git can't get subfolders for white list)
 !*$/
 !**/
 
-# 3. 白名单：允许追踪的后缀与文件
+# 3. White List by suffix
 !**/*.nf
 !**/*.py
 !**/*.config
@@ -16,13 +16,8 @@
 !**/*.js
 !**/*.toml
 !**/*.yml
-!**/*.yaml
 !**/*.json
 !**/*.lock
-!**/*.png
-!**/*.svg
-!**/*.txt
-!tests_data/*.bed
 !**/.env*
 !**/Dockerfile
 !**/.gitignore
@@ -31,8 +26,9 @@
 !**/*meta*tsv
 !**/*meta*csv
 **/.git/
+**/*egg-info/
 
-# 4. 显式排除特定的依赖与缓存文件夹（覆盖前面的白名单）
+# 4. overrise white list for particular cache folders
 *.log
 .nextflow.log*
 _site/
@@ -50,6 +46,6 @@ build/
 .hf_home/
 .ruff_cache/
 .pytest_cache/
-src/peak2anno/_version.py
+.uv-cache/
 .codex/
 .agents/

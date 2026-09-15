@@ -3,6 +3,7 @@ site_description: Annotate genomic peaks to genes, features, and chromatin state
 site_url: https://sjcab-peak2anno.readthedocs.io/
 repo_url: https://github.com/stjudecab/sjcab_peak2anno
 repo_name: stjudecab/sjcab_peak2anno
+edit_uri: edit/main/docs/
 
 theme:
   name: readthedocs
