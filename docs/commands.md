@@ -18,6 +18,12 @@ peak2anno peak2state peaks.bed --states dense_states.bed
 All commands show resolved defaults with `-h` and accept positional input or
 `-i/--input`. Omit `-o/--output` to write the main table to stdout.
 
+Common short aliases include `-f/--output-format`, `-I/--input-format`,
+`-H/--header`, `-C/--columns`, `-R/--region-column`, `-g/--gene-bed`,
+`-t/--tss-bed`, `-x/--overlap-cutoff`, and `-m/--summary`. The database
+installation controls are `-a/--auto-install-db` and
+`-A/--no-auto-install-db`; the original long forms remain supported.
+
 ## Combining commands
 
 Run multiple annotations once and merge their columns:
@@ -53,6 +59,23 @@ peak2anno loop2feature loops.bedpe --feature-dir annotations/hg38 \
 peak2anno loop2state loops.bedpe --states states.bed \
   --output-format bedpe -o loops.states.bedpe
 ```
+
+## Equivalent to `voom2anno.sh`
+
+For the legacy command
+`voom2anno.sh bed peaks.bed mm10 2000 50000 XX`, use explicit settings:
+
+```bash
+peak2anno peak2gene -i peaks.bed -s mm10 --ver vM22 \
+  --gene-type all --prom-enha-cutoffs 2kb,50kb,2kb \
+  --output-format txt -o peaks.tsv
+```
+
+Here `XX` selects the legacy gencode branch; it is not a gene-type value.
+`peak2anno` resolves `mm10` to the selected database version and uses the
+same promoter and enhancer distances. Its text output includes a header;
+the annotation columns are `Gene_2kb`, `Gencode_ids`, `Gene_2kb-50kb`,
+`Gencode_ids`, `Closest_Gene`, `Gencode_id`, and `Distance`.
 
 ## Gene filters
 

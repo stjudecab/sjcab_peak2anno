@@ -16,6 +16,7 @@ DEFAULT_ISO_SET = "all"
 DEFAULT_2FEATURE_OUT = "max"
 DEFAULT_2STATE_OUT = "max,percent"
 DEFAULT_TXT_DELIMITER = "auto"
+DEFAULT_BACKEND = "auto"
 
 RC_DEFAULTS = {
     "SJCAB_PEAK2ANNO_DB_PATH": "~/.sjcab_peak2anno_db",
@@ -26,6 +27,7 @@ RC_DEFAULTS = {
     "SJCAB_PEAK2ANNO_2FEATURE_OUT": DEFAULT_2FEATURE_OUT,
     "SJCAB_PEAK2ANNO_2STATE_OUT": DEFAULT_2STATE_OUT,
     "SJCAB_PEAK2ANNO_TXT_DELIMITER": DEFAULT_TXT_DELIMITER,
+    "SJCAB_PEAK2ANNO_BACKEND": DEFAULT_BACKEND,
 }
 
 
@@ -42,6 +44,7 @@ class Settings:
     feature_out: str
     state_out: str
     txt_delimiter: str
+    backend: str
 
     @property
     def default_species(self) -> str:
@@ -156,6 +159,7 @@ def load_settings() -> Settings:
         "SJCAB_PEAK2ANNO_2FEATURE_OUT": DEFAULT_2FEATURE_OUT,
         "SJCAB_PEAK2ANNO_2STATE_OUT": DEFAULT_2STATE_OUT,
         "SJCAB_PEAK2ANNO_TXT_DELIMITER": DEFAULT_TXT_DELIMITER,
+        "SJCAB_PEAK2ANNO_BACKEND": DEFAULT_BACKEND,
     }
     candidates = rc_paths()
     rc_file = next((path for path in candidates if path.is_file()), candidates[0])
@@ -184,6 +188,7 @@ def load_settings() -> Settings:
         feature_out=values["SJCAB_PEAK2ANNO_2FEATURE_OUT"],
         state_out=values["SJCAB_PEAK2ANNO_2STATE_OUT"],
         txt_delimiter=values["SJCAB_PEAK2ANNO_TXT_DELIMITER"],
+        backend=values["SJCAB_PEAK2ANNO_BACKEND"],
     )
     if settings.iso_set not in {"all", "deduplong"}:
         raise ValueError("SJCAB_PEAK2ANNO_ISO_SET must be all or deduplong")

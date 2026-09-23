@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Added selectable interval backends with `--backend`/`-b` and the
+  `SJCAB_PEAK2ANNO_BACKEND` configuration setting. `auto` prefers `bedtools`
+  when available and records the resolved backend in `.run.log`.
+- Added indexed interval-window and nearest-gene queries to reduce repeated
+  full-reference scans.
+- Added short command-line aliases and documented the legacy `voom2anno.sh`
+  equivalence for peak-to-gene runs.
+- Added regression coverage for backend resolution, distance compatibility,
+  and command-line parsing.
+
 ## 0.1.8 / 2026-09-11
 
 - Updated the package and conda dependency to `sjcab_peak2anno_db` 0.1.8.

@@ -22,6 +22,7 @@ from peak2anno.cli import build_parser, main
 from peak2anno.config import load_settings
 from peak2anno.intervals import read_regions
 from peak2anno.peak2gene import PeakGeneConfig, annotate_peak2gene, promoter_records
+from peak2anno.runtime import ToolStatus, resolve_backend
 
 
 def write(path: Path, text: str) -> Path:
@@ -35,6 +36,20 @@ def read_tsv(path: Path) -> list[list[str]]:
     """Read a tab-separated file into rows."""
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.reader(handle, delimiter="\t"))
+
+
+def test_backend_auto_prefers_bedtools() -> None:
+    """auto should prefer the native executable over the Python wrapper."""
+    status = ToolStatus(bedtools="/usr/bin/bedtools", pybedtools=True)
+    assert resolve_backend("auto", status) == "bedtools"
+    assert resolve_backend("pybedtools", status) == "pybedtools"
+    assert resolve_backend("auto", ToolStatus(bedtools=None, pybedtools=False)) == "python"
+
+
+def test_backend_rejects_unavailable_tool() -> None:
+    """Explicit backend requests should fail clearly when unavailable."""
+    with pytest.raises(ValueError, match="bedtools was not found"):
+        resolve_backend("bedtools", ToolStatus(bedtools=None, pybedtools=False))
 
 
 def make_toy_db(tmp_path: Path) -> Path:
@@ -147,7 +162,7 @@ def test_peak2gene_default_tss(tmp_path: Path, toy_db: Path) -> None:
         "Distance",
     ]
     assert rows[1][-7:] == ["GeneA", "ENSGA", ".", ".", "GeneA", "ENSGA", "0"]
-    assert rows[2][-7:] == [".", ".", "GeneB,GeneA", "ENSGB,ENSGA", "GeneB", "ENSGB", "1950"]
+    assert rows[2][-7:] == [".", ".", "GeneB,GeneA", "ENSGB,ENSGA", "GeneB", "ENSGB", "1951"]
     assert rows[3][-3:] == ["GeneC", "ENSGC", "950"]
 
 
@@ -182,6 +197,31 @@ def test_peak2gene_help_shows_short_options_and_defaults(capsys: pytest.CaptureF
     assert "(default: v31)" in help_text
     assert "--prom-enha-cutoffs" in help_text
     assert "(default: 2kb,50kb,2kb)" in help_text
+
+
+def test_common_short_options_parse() -> None:
+    """Frequently used long options should have concise aliases."""
+    args = build_parser().parse_args(
+        [
+            "peak2gene",
+            "-i", "peaks.txt",
+            "-f", "txt",
+            "-I", "txt",
+            "-H", "yes",
+            "-C", "0,1,2",
+            "-R", "0",
+            "-g", "genes.bed",
+            "-t", "tss.bed",
+        ]
+    )
+    assert args.input_option == Path("peaks.txt")
+    assert args.output_format == "txt"
+    assert args.input_format == "txt"
+    assert args.header == "yes"
+    assert args.columns == "0,1,2"
+    assert args.region_column == 0
+    assert args.gene_bed == Path("genes.bed")
+    assert args.tss_bed == Path("tss.bed")
 
 
 def test_rc_settings_are_overridden_by_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

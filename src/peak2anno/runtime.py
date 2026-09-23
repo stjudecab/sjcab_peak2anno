@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from typing import Optional
 
 
+BACKENDS = ("auto", "bedtools", "pybedtools", "python")
+
+
 @dataclass(frozen=True)
 class ToolStatus:
     """Availability of optional interval acceleration tools."""
@@ -35,9 +38,33 @@ def detect_tools() -> ToolStatus:
     return ToolStatus(bedtools=bedtools, pybedtools=True)
 
 
-def warn_if_slow(status: ToolStatus) -> None:
-    """Explain the Python fallback when bedtools acceleration is unavailable."""
-    if status.accelerated:
+def resolve_backend(requested: str, status: ToolStatus) -> str:
+    """Resolve a requested backend against the tools available on ``PATH``.
+
+    ``bedtools`` is preferred for ``auto`` because it avoids the Python
+    wrapper overhead.  The pybedtools backend still requires the bedtools
+    executable for interval operations.
+    """
+    if requested not in BACKENDS:
+        raise ValueError(f"backend must be one of: {', '.join(BACKENDS)}")
+    if requested == "auto":
+        if status.bedtools is not None:
+            return "bedtools"
+        if status.pybedtools and status.bedtools is not None:
+            return "pybedtools"
+        return "python"
+    if requested == "bedtools" and status.bedtools is None:
+        raise ValueError("--backend bedtools requested, but bedtools was not found on PATH")
+    if requested == "pybedtools" and not status.pybedtools:
+        raise ValueError("--backend pybedtools requested, but pybedtools is not installed")
+    if requested == "pybedtools" and status.bedtools is None:
+        raise ValueError("--backend pybedtools requested, but its bedtools executable was not found on PATH")
+    return requested
+
+
+def warn_if_slow(status: ToolStatus, backend: str = "auto") -> None:
+    """Explain the Python fallback when no external backend is selected."""
+    if backend != "python":
         return
     missing = []
     if status.bedtools is None:

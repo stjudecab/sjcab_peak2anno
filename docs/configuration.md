@@ -21,6 +21,7 @@ path and writes supported settings as commented examples.
 # SJCAB_PEAK2ANNO_2FEATURE_OUT=max
 # SJCAB_PEAK2ANNO_2STATE_OUT=max,percent
 # SJCAB_PEAK2ANNO_TXT_DELIMITER=auto
+# SJCAB_PEAK2ANNO_BACKEND=auto
 ```
 
 Environment variables with the same names override RC values. Species/version
@@ -39,6 +40,12 @@ cutoff overrides use case-sensitive names such as
 | `SJCAB_PEAK2ANNO_2FEATURE_OUT` | `max` | Feature output mode |
 | `SJCAB_PEAK2ANNO_2STATE_OUT` | `max,percent` | State output mode |
 | `SJCAB_PEAK2ANNO_TXT_DELIMITER` | `auto` | Delimiter inside text regions such as `chr1:100-200` |
+| `SJCAB_PEAK2ANNO_BACKEND` | `auto` | Interval backend: `bedtools`, `pybedtools`, or `python` |
+
+The backend can also be selected per command with `-b/--backend`. `auto` uses
+the native `bedtools` executable when it is on `PATH`, then `pybedtools` when
+available, and otherwise the indexed Python fallback. The `pybedtools`
+backend requires both the Python package and a `bedtools` executable.
 
 Output modes are `max`, `percent`, `max,percent`, or `percent,max`.
 

@@ -30,7 +30,7 @@ from .db import available_versions, db_root, gene_annotation_path
 from .peak2gene import PeakGeneConfig, annotate_peak2gene, resolve_tss_path
 from .loops import annotate_loop
 from .intervals import detect_output_format, read_regions, write_table
-from .runtime import detect_tools, warn_if_slow
+from .runtime import BACKENDS, detect_tools, resolve_backend, warn_if_slow
 
 
 DB_PACKAGE = "sjcab_peak2anno_db==0.1.8"
@@ -46,20 +46,20 @@ def add_common_feature_args(parser: argparse.ArgumentParser, settings: Settings)
         "-c", "--feature-dir", type=Path,
         help="Feature BED directory. If omitted, search --db-path for the species feature files.",
     )
-    parser.add_argument("--input-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Input format.")
-    parser.add_argument("--columns", help="BED columns as comma-separated zero-based indexes, for example 0,1,2.")
-    parser.add_argument("--region-column", type=int, default=0, help="Zero-based region column for txt input.")
-    parser.add_argument("--output-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows input format.")
-    parser.add_argument("--features", help="Comma-separated feature BEDs or .lst file.")
-    parser.add_argument("--feature-labels", help="Comma-separated feature labels or .labels.lst file.")
+    parser.add_argument("-I", "--input-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Input format.")
+    parser.add_argument("-C", "--columns", help="BED columns as comma-separated zero-based indexes, for example 0,1,2.")
+    parser.add_argument("-R", "--region-column", type=int, default=0, help="Zero-based region column for txt input.")
+    parser.add_argument("-f", "--output-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows input format.")
+    parser.add_argument("-F", "--features", help="Comma-separated feature BEDs or .lst file.")
+    parser.add_argument("-L", "--feature-labels", help="Comma-separated feature labels or .labels.lst file.")
     parser.add_argument(
-        "--overlap-cutoff",
+        "-x", "--overlap-cutoff",
         default="1bp",
         help="Minimum overlap. Examples: 1bp, 10bp, 0.1 for 10%% of peak, 10%%.",
     )
-    parser.add_argument("--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
-    parser.add_argument("--summary", type=Path, help="Summary TSV path.")
-    parser.add_argument("--plot", action="store_true", help="Write PNG/PDF bar and pie plots for summary counts.")
+    parser.add_argument("-H", "--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
+    parser.add_argument("-m", "--summary", type=Path, help="Summary TSV path.")
+    parser.add_argument("-p", "--plot", action="store_true", help="Write PNG/PDF bar and pie plots for summary counts.")
 
 
 def add_input_args(parser: argparse.ArgumentParser, help_text: str, txt_delimiter: str = "auto") -> None:
@@ -69,18 +69,26 @@ def add_input_args(parser: argparse.ArgumentParser, help_text: str, txt_delimite
     parser.set_defaults(txt_delimiter=txt_delimiter)
 
 
+def add_backend_arg(parser: argparse.ArgumentParser, settings: Settings) -> None:
+    """Add the interval backend selector shared by annotation commands."""
+    parser.add_argument(
+        "-b", "--backend", choices=BACKENDS, default=settings.backend,
+        help="Interval backend. auto prefers bedtools, then pybedtools, then Python.",
+    )
+
+
 def add_db_install_args(parser: argparse.ArgumentParser) -> None:
     """Add automatic database installation controls."""
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
-        "--auto-install-db",
+        "-a", "--auto-install-db",
         dest="auto_install_db",
         action="store_true",
         default=False,
         help="Install missing gene/feature BEDs automatically.",
     )
     group.add_argument(
-        "--no-auto-install-db",
+        "-A", "--no-auto-install-db",
         dest="auto_install_db",
         action="store_false",
         help="Do not install missing database files; fail with the missing path.",
@@ -90,7 +98,7 @@ def add_db_install_args(parser: argparse.ArgumentParser) -> None:
 def add_gene_cutoff_args(parser: argparse.ArgumentParser, settings: Settings) -> None:
     """Add the three-part promoter/enhancer cutoff option."""
     parser.add_argument(
-        "--prom-enha-cutoffs",
+        "-P", "--prom-enha-cutoffs",
         default=settings.prom_enha_cutoffs,
         help="promoter-up,enhancer,promoter-down; supports geneN and transcriptN.",
     )
@@ -99,7 +107,7 @@ def add_gene_cutoff_args(parser: argparse.ArgumentParser, settings: Settings) ->
 def add_output_mode_arg(parser: argparse.ArgumentParser, default: str, help_text: str) -> None:
     """Add max/percent output selection with its resolved default."""
     parser.add_argument(
-        "--output-mode",
+        "-M", "--output-mode",
         choices=["max", "percent", "max,percent", "percent,max"],
         default=default,
         help=help_text,
@@ -141,6 +149,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_input_args(peak2gene, "Input BED/TSV or region-text file.", settings.txt_delimiter)
+    add_backend_arg(peak2gene, settings)
     add_db_install_args(peak2gene)
     peak2gene.add_argument("-o", "--output", type=Path, help="Output TSV path; defaults to stdout.")
     peak2gene.add_argument("-s", "--species", default=settings.default_species, help="Species key, for example hg38 or mm10.")
@@ -159,18 +168,18 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     )
     add_gene_cutoff_args(peak2gene, settings)
     peak2gene.add_argument(
-        "--gene-type",
+        "-G", "--gene-type",
         default=settings.gene_type,
         help="Gene type selector from BED column 9: all, protein_coding, lincRNA, nomicro, or comma list.",
     )
     peak2gene.add_argument("-d", "--db-path", default=settings.db_path, help="Database root; defaults to rc/env or ~/.sjcab_peak2anno_db.")
-    peak2gene.add_argument("--gene-bed", type=Path, help="Override gene BED; TSS is computed from strand.")
-    peak2gene.add_argument("--tss-bed", type=Path, help="Override TSS BED.")
-    peak2gene.add_argument("--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
-    peak2gene.add_argument("--input-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Input format.")
-    peak2gene.add_argument("--columns", help="BED columns as comma-separated zero-based indexes, for example 0,1,2.")
-    peak2gene.add_argument("--region-column", type=int, default=0, help="Zero-based region column for txt input.")
-    peak2gene.add_argument("--output-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows input format.")
+    peak2gene.add_argument("-g", "--gene-bed", type=Path, help="Override gene BED; TSS is computed from strand.")
+    peak2gene.add_argument("-t", "--tss-bed", type=Path, help="Override TSS BED.")
+    peak2gene.add_argument("-H", "--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
+    peak2gene.add_argument("-I", "--input-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Input format.")
+    peak2gene.add_argument("-C", "--columns", help="BED columns as comma-separated zero-based indexes, for example 0,1,2.")
+    peak2gene.add_argument("-R", "--region-column", type=int, default=0, help="Zero-based region column for txt input.")
+    peak2gene.add_argument("-f", "--output-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows input format.")
 
     narrow = subparsers.add_parser(
         "narrow2feature",
@@ -179,6 +188,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     )
     add_common_feature_args(narrow, settings)
     add_db_install_args(narrow)
+    add_backend_arg(narrow, settings)
     narrow.add_argument("--column-name", default="FeatureAssignment", help="Output annotation column name.")
     add_output_mode_arg(narrow, settings.feature_out, "Output max assignment, ordered percentages, or both.")
 
@@ -189,6 +199,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     )
     add_common_feature_args(broad, settings)
     add_db_install_args(broad)
+    add_backend_arg(broad, settings)
     add_output_mode_arg(broad, settings.feature_out, "Output max assignment, ordered percentages, or both.")
 
     state = subparsers.add_parser(
@@ -197,20 +208,21 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_input_args(state, "Input BED/TSV or region-text file.", settings.txt_delimiter)
+    add_backend_arg(state, settings)
     add_db_install_args(state)
-    state.add_argument("-s", "--states", type=Path, required=True, help="Chromatin state dense/segments BED.")
+    state.add_argument("-s", "-S", "--states", type=Path, required=True, help="Chromatin state dense/segments BED.")
     state.add_argument("-o", "--output", type=Path, help="Output TSV path; defaults to stdout.")
-    state.add_argument("--state2name", type=Path, help="Optional two-column state ID to label mapping.")
+    state.add_argument("-N", "--state2name", type=Path, help="Optional two-column state ID to label mapping.")
     state.add_argument(
-        "--overlap-cutoff",
+        "-x", "--overlap-cutoff",
         default="1bp",
         help="Minimum overlap. Examples: 1bp, 10bp, 0.1 for 10%% of peak, 10%%.",
     )
-    state.add_argument("--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
-    state.add_argument("--input-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Input format.")
-    state.add_argument("--columns", help="BED columns as comma-separated zero-based indexes, for example 0,1,2.")
-    state.add_argument("--region-column", type=int, default=0, help="Zero-based region column for txt input.")
-    state.add_argument("--output-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows input format.")
+    state.add_argument("-H", "--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
+    state.add_argument("-I", "--input-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Input format.")
+    state.add_argument("-C", "--columns", help="BED columns as comma-separated zero-based indexes, for example 0,1,2.")
+    state.add_argument("-R", "--region-column", type=int, default=0, help="Zero-based region column for txt input.")
+    state.add_argument("-f", "--output-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows input format.")
     add_output_mode_arg(state, settings.state_out, "Output max state, percentages, or both.")
 
     for name, help_text in (
@@ -220,63 +232,65 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     ):
         loop = subparsers.add_parser(name, help=help_text, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         add_input_args(loop, "BEDPE input.", settings.txt_delimiter)
+        add_backend_arg(loop, settings)
         add_db_install_args(loop)
         loop.add_argument("-o", "--output", type=Path, help="Output path; defaults to stdout.")
-        loop.add_argument("--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
-        loop.add_argument("--loop-columns", default="0,1,2,3,4,5", help="BEDPE coordinate columns.")
-        loop.add_argument("--output-format", choices=["auto", "bedpe", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows BEDPE input.")
+        loop.add_argument("-H", "--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
+        loop.add_argument("-C", "--loop-columns", default="0,1,2,3,4,5", help="BEDPE coordinate columns.")
+        loop.add_argument("-f", "--output-format", choices=["auto", "bedpe", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows BEDPE input.")
         loop.add_argument("-s", "--species", default=settings.default_species, help="Species key.")
         loop.add_argument("-d", "--db-path", default=settings.db_path, help="Database root.")
         loop.add_argument("--ver", "--species-version", dest="species_version", default=settings.version_for(settings.default_species), help="Annotation version.")
         loop.add_argument("--iso", "--isoform-set", "--isoform-version", dest="isoform_version", choices=["all", "deduplong"], default=settings.iso_set, help="Isoform set.")
         loop.add_argument("--gene-type", default=settings.gene_type, help="Gene type selector for loop2gene.")
-        loop.add_argument("--tss-bed", type=Path, help="Override TSS BED.")
-        loop.add_argument("--gene-bed", type=Path, help="Override gene BED.")
+        loop.add_argument("-t", "--tss-bed", type=Path, help="Override TSS BED.")
+        loop.add_argument("-g", "--gene-bed", type=Path, help="Override gene BED.")
         loop.add_argument("-c", "--feature-dir", type=Path, help="Feature BED directory.")
-        loop.add_argument("--feature-mode", choices=["narrow", "broad"], default="narrow", help="Feature mode.")
-        loop.add_argument("--overlap-cutoff", default="1bp", help="Minimum overlap.")
-        loop.add_argument("--states", type=Path, help="Chromatin state BED.")
-        loop.add_argument("--state2name", type=Path, help="State ID/name map.")
+        loop.add_argument("-B", "--feature-mode", choices=["narrow", "broad"], default="narrow", help="Feature mode.")
+        loop.add_argument("-x", "--overlap-cutoff", default="1bp", help="Minimum overlap.")
+        loop.add_argument("-S", "--states", type=Path, help="Chromatin state BED.")
+        loop.add_argument("-N", "--state2name", type=Path, help="State ID/name map.")
         add_gene_cutoff_args(loop, settings)
         add_output_mode_arg(loop, settings.state_out if name == "loop2state" else settings.feature_out, "Output max assignment, ordered percentages, or both.")
 
     combined = subparsers.add_parser("combined", help="Run multiple annotations and merge their columns.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     combined.add_argument("--commands", action="append", choices=["peak2gene", "narrow2feature", "broad2feature", "peak2state"], required=True, help="Annotation step; repeat for multiple steps.")
     add_input_args(combined, "Input BED/TSV or region-text file.", settings.txt_delimiter)
+    add_backend_arg(combined, settings)
     add_db_install_args(combined)
     combined.add_argument("-o", "--output", type=Path, help="Output path; defaults to stdout.")
     combined.add_argument("-s", "--species", default=settings.default_species, help="Species key.")
     combined.add_argument("-d", "--db-path", default=settings.db_path, help="Database root.")
     combined.add_argument("--ver", "--species-version", dest="species_version", default=settings.version_for(settings.default_species), help="Annotation version.")
     combined.add_argument("--iso", "--isoform-set", "--isoform-version", dest="isoform_version", choices=["all", "deduplong"], default=settings.iso_set, help="Isoform set.")
-    combined.add_argument("--tss-bed", type=Path, help="Override TSS BED.")
-    combined.add_argument("--gene-bed", type=Path, help="Override gene BED.")
+    combined.add_argument("-t", "--tss-bed", type=Path, help="Override TSS BED.")
+    combined.add_argument("-g", "--gene-bed", type=Path, help="Override gene BED.")
     combined.add_argument("-c", "--feature-dir", type=Path, help="Feature BED directory.")
     combined.add_argument("--features", help="Feature BEDs.")
     combined.add_argument("--feature-labels", help="Feature labels.")
     combined.add_argument("--gene-type", default=settings.gene_type, help="Gene type filter.")
-    combined.add_argument("--states", type=Path, help="Chromatin state BED.")
-    combined.add_argument("--state2name", type=Path, help="State ID/name map.")
+    combined.add_argument("-S", "--states", type=Path, help="Chromatin state BED.")
+    combined.add_argument("-N", "--state2name", type=Path, help="State ID/name map.")
     add_gene_cutoff_args(combined, settings)
     combined.add_argument("--column-name", default="FeatureAssignment", help="Feature output column name.")
-    combined.add_argument("--overlap-cutoff", default="1bp", help="Minimum overlap.")
-    combined.add_argument("--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
-    combined.add_argument("--input-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto")
-    combined.add_argument("--columns")
-    combined.add_argument("--region-column", type=int, default=0)
-    combined.add_argument("--output-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows input format.")
+    combined.add_argument("-x", "--overlap-cutoff", default="1bp", help="Minimum overlap.")
+    combined.add_argument("-H", "--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
+    combined.add_argument("-I", "--input-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto")
+    combined.add_argument("-C", "--columns")
+    combined.add_argument("-R", "--region-column", type=int, default=0)
+    combined.add_argument("-f", "--output-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows input format.")
     combined.add_argument("--workers", type=int, default=1, help="Processes for independent annotations.")
     combined.add_argument("--feature-output-mode", choices=["max", "percent", "max,percent", "percent,max"], default=settings.feature_out, help="Output mode for feature steps.")
     combined.add_argument("--state-output-mode", choices=["max", "percent", "max,percent", "percent,max"], default=settings.state_out, help="Output mode for state steps.")
-    state.add_argument("--summary", type=Path, help="Summary TSV path.")
-    state.add_argument("--plot", action="store_true", help="Write PNG/PDF bar and pie plots for summary counts.")
+    state.add_argument("-m", "--summary", type=Path, help="Summary TSV path.")
+    state.add_argument("-p", "--plot", action="store_true", help="Write PNG/PDF bar and pie plots for summary counts.")
 
     versions = subparsers.add_parser(
         "list-db",
         help="List available sjcab_peak2anno_db annotations.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    versions.add_argument("--db-path", default=settings.db_path, help="sjcab_peak2anno_db root.")
+    versions.add_argument("-d", "--db-path", default=settings.db_path, help="sjcab_peak2anno_db root.")
     return parser
 
 
@@ -301,6 +315,7 @@ def run(args: argparse.Namespace) -> Optional[Path]:
                 region_column=args.region_column,
                 output_format=args.output_format,
                 txt_delimiter=args.txt_delimiter,
+                backend=args.backend,
             )
         )
     if args.command == "narrow2feature":
@@ -324,6 +339,7 @@ def run(args: argparse.Namespace) -> Optional[Path]:
                 output_format=args.output_format,
                 output_mode=args.output_mode,
                 txt_delimiter=args.txt_delimiter,
+                backend=args.backend,
             )
         )
         return output
@@ -347,6 +363,7 @@ def run(args: argparse.Namespace) -> Optional[Path]:
                 output_format=args.output_format,
                 output_mode=args.output_mode,
                 txt_delimiter=args.txt_delimiter,
+                backend=args.backend,
             )
         )
         return output
@@ -367,6 +384,7 @@ def run(args: argparse.Namespace) -> Optional[Path]:
                 output_format=args.output_format,
                 output_mode=args.output_mode,
                 txt_delimiter=args.txt_delimiter,
+                backend=args.backend,
             )
         )
         return output
@@ -394,6 +412,7 @@ def run(args: argparse.Namespace) -> Optional[Path]:
             output_mode=args.output_mode,
             states=args.states,
             state2name=args.state2name,
+            backend=args.backend,
         )
     if args.command == "combined":
         return run_combined(args)
@@ -555,6 +574,8 @@ def record_run(args: argparse.Namespace, command_args: Optional[Sequence[str]] =
     with Path(".run.log").open("a", encoding="utf-8") as handle:
         handle.write(f"[{datetime.now().isoformat(timespec='seconds')}]\n")
         handle.write(f"command: {command}\n")
+        if hasattr(args, "backend"):
+            handle.write(f"backend: {args.backend}\n")
         handle.write(f"output: {output.expanduser().resolve() if output else 'stdout'}\n")
         for reference in references:
             handle.write(f"reference: {reference}\n")
@@ -704,8 +725,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser(settings)
     normalized = normalize_argv(argv)
     args = parser.parse_args(normalized)
-    warn_if_slow(detect_tools())
     apply_settings(args, normalized or [], settings)
+    if hasattr(args, "backend"):
+        tool_status = detect_tools()
+        try:
+            args.backend = resolve_backend(args.backend, tool_status)
+        except ValueError as exc:
+            parser.error(str(exc))
+        warn_if_slow(tool_status, args.backend)
     if args.command != "list-db":
         if getattr(args, "input", None) is None:
             args.input = getattr(args, "input_option", None)

@@ -44,6 +44,7 @@ class PeakGeneConfig:
     region_column: int = 0
     output_format: str = "txt"
     txt_delimiter: str = "auto"
+    backend: str = "python"
 
 
 def resolve_tss_records(config: PeakGeneConfig) -> List[BedRecord]:
@@ -76,8 +77,14 @@ def nearby_records(
     cutoff_bp: object,
 ) -> List[Tuple[BedRecord, int]]:
     """Return TSS records within a distance cutoff of a peak."""
+    fixed_cutoff = _fixed_cutoff(cutoff_bp)
+    candidates = (
+        index.query_window(region.chrom, region.start, region.end, fixed_cutoff)
+        if fixed_cutoff is not None
+        else index.records_for_chrom(region.chrom)
+    )
     matches: List[Tuple[BedRecord, int]] = []
-    for record in index.records_for_chrom(region.chrom):
+    for record in candidates:
         dist = distance_bp(region.start, region.end, record.start, record.end)
         if dist <= cutoff_value(cutoff_bp, record):
             matches.append((record, dist))
@@ -92,8 +99,20 @@ def promoter_records(
     downstream_bp: object,
 ) -> List[BedRecord]:
     """Return records in strand-aware upstream/downstream promoter windows."""
+    fixed_upstream = _fixed_cutoff(upstream_bp)
+    fixed_downstream = _fixed_cutoff(downstream_bp)
+    fixed_window = (
+        max(fixed_upstream, fixed_downstream)
+        if fixed_upstream is not None and fixed_downstream is not None
+        else None
+    )
+    candidates = (
+        index.query_window(region.chrom, region.start, region.end, fixed_window)
+        if fixed_window is not None
+        else index.records_for_chrom(region.chrom)
+    )
     matches: List[Tuple[BedRecord, int]] = []
-    for record in index.records_for_chrom(region.chrom):
+    for record in candidates:
         if region.end <= record.start:
             distance = record.start - region.end
             side = "left"
@@ -158,6 +177,17 @@ def cutoff_value(value: object, record: BedRecord) -> int:
     return parse_distance(text)
 
 
+def _fixed_cutoff(value: object) -> Optional[int]:
+    """Return a fixed cutoff in base pairs, or ``None`` for relative cutoffs."""
+    text = str(value).strip().lower()
+    if text.startswith("gene") or text.startswith("transcript"):
+        return None
+    try:
+        return parse_distance(text)
+    except ValueError:
+        return None
+
+
 def cutoff_label(value: str) -> str:
     """Format a cutoff for output column names."""
     try:
@@ -168,13 +198,9 @@ def cutoff_label(value: str) -> str:
 
 def closest_record(index: IntervalIndex, region: InputRegion) -> Tuple[Optional[BedRecord], Optional[int]]:
     """Return the closest TSS record and distance for a peak."""
-    records = index.records_for_chrom(region.chrom)
-    if not records:
-        return None, None
+    candidates = index.nearest_candidates(region.chrom, region.start, region.end)
     best: Optional[Tuple[BedRecord, int]] = None
-    for record in records:
-        if best is not None and record.start > region.end + best[1]:
-            break
+    for record in candidates:
         dist = distance_bp(region.start, region.end, record.start, record.end)
         if best is None or (dist, record.start, record.name, record.gene_id) < (
             best[1],

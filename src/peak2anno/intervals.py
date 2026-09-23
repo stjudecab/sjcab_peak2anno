@@ -150,6 +150,37 @@ class IntervalIndex:
         """Return sorted records for a chromosome."""
         return self.records_by_chrom.get(chrom, ())
 
+    def query_window(self, chrom: str, start: int, end: int, distance: int) -> Iterator[BedRecord]:
+        """Yield records within a fixed distance of a query interval.
+
+        The older implementation scanned every record on a chromosome for
+        each query.  This indexed window keeps the same overlap semantics but
+        restricts the scan to the coordinate neighborhood used by peak2gene.
+        """
+        records = self.records_by_chrom.get(chrom)
+        if not records:
+            return
+        starts = self.starts_by_chrom[chrom]
+        lower = start - max(0, distance)
+        upper = end + max(0, distance)
+        left = max(0, bisect.bisect_left(starts, lower) - 1)
+        right = bisect.bisect_right(starts, upper)
+        for record in records[left:right]:
+            if distance_bp(start, end, record.start, record.end) <= distance:
+                yield record
+
+    def nearest_candidates(self, chrom: str, start: int, end: int) -> Iterator[BedRecord]:
+        """Yield overlap and immediate flanking records for closest queries."""
+        records = self.records_by_chrom.get(chrom)
+        if not records:
+            return
+        starts = self.starts_by_chrom[chrom]
+        right = bisect.bisect_left(starts, start)
+        candidates = {records[max(0, right - 1)], records[min(len(records) - 1, right)]}
+        candidates.update(self.query(chrom, start, end))
+        for record in sorted(candidates, key=lambda item: (item.start, item.end, item.name, item.gene_id)):
+            yield record
+
 
 def split_fields(line: str) -> List[str]:
     """Split a table line into fields while preferring tab separation."""
@@ -510,12 +541,18 @@ def overlap_bp(a_start: int, a_end: int, b_start: int, b_end: int) -> int:
 
 
 def distance_bp(a_start: int, a_end: int, b_start: int, b_end: int) -> int:
-    """Return bedtools-like non-negative interval distance."""
+    """Return the legacy voom/bedtools-compatible interval distance.
+
+    The historical ``voom2anno.sh`` path reports the coordinate distance
+    between non-overlapping BED intervals using inclusive endpoint
+    coordinates.  Retaining the ``+1`` here keeps closest and cutoff
+    boundaries consistent with that output while overlaps remain zero.
+    """
     if overlap_bp(a_start, a_end, b_start, b_end) > 0:
         return 0
     if a_end <= b_start:
-        return b_start - a_end
-    return a_start - b_end
+        return b_start - a_end + 1
+    return a_start - b_end + 1
 
 
 def unique_join(values: Iterable[str]) -> str:

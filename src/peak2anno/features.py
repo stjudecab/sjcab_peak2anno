@@ -69,6 +69,7 @@ class FeatureConfig:
     output_format: str = "txt"
     output_mode: str = "legacy"
     txt_delimiter: str = "auto"
+    backend: str = "python"
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,7 @@ class StateConfig:
     output_format: str = "txt"
     output_mode: str = "legacy"
     txt_delimiter: str = "auto"
+    backend: str = "python"
 
 
 def read_list_or_csv(value: str, base_dir: Optional[Path] = None) -> List[str]:
