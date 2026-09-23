@@ -166,6 +166,23 @@ def test_peak2gene_default_tss(tmp_path: Path, toy_db: Path) -> None:
     assert rows[3][-3:] == ["GeneC", "ENSGC", "950"]
 
 
+def test_peak2gene_keeps_promoter_and_distal_columns_exclusive(tmp_path: Path, toy_db: Path) -> None:
+    """voom-compatible output reports distal genes only without promoters."""
+    peaks = write(tmp_path / "peaks.bed", "chr1\t3000\t3050\np1\n")
+    output = tmp_path / "output.tsv"
+    annotate_peak2gene(
+        PeakGeneConfig(
+            input_path=peaks,
+            output_path=output,
+            species="toy",
+            db_path=str(toy_db),
+            prom_enha_cutoffs="2500bp,6000bp,2500bp",
+        )
+    )
+    row = read_tsv(output)[1]
+    assert row[3:7] == ["GeneB", "ENSGB", ".", "."]
+
+
 def test_peak2gene_finds_default_gene_bed(tmp_path: Path) -> None:
     """peak2gene should find the default all.gene.bed database file."""
     db = tmp_path / "db"

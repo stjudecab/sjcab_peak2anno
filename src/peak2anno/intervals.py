@@ -176,9 +176,27 @@ class IntervalIndex:
             return
         starts = self.starts_by_chrom[chrom]
         right = bisect.bisect_left(starts, start)
-        candidates = {records[max(0, right - 1)], records[min(len(records) - 1, right)]}
-        candidates.update(self.query(chrom, start, end))
-        for record in sorted(candidates, key=lambda item: (item.start, item.end, item.name, item.gene_id)):
+        flank_indexes = {max(0, right - 1), min(len(records) - 1, right)}
+        # Keep all records at a flank coordinate.  bedtools ``closest -t
+        # first`` resolves equal-distance ties using reference-file order.
+        for index in tuple(flank_indexes):
+            flank_start = records[index].start
+            flank_end = records[index].end
+            offset = index - 1
+            while offset >= 0 and (records[offset].start, records[offset].end) == (flank_start, flank_end):
+                flank_indexes.add(offset)
+                offset -= 1
+            offset = index + 1
+            while offset < len(records) and (records[offset].start, records[offset].end) == (flank_start, flank_end):
+                flank_indexes.add(offset)
+                offset += 1
+        candidates = [records[index] for index in sorted(flank_indexes)]
+        candidates.extend(self.query(chrom, start, end))
+        seen = set()
+        for record in candidates:
+            if record in seen:
+                continue
+            seen.add(record)
             yield record
 
 

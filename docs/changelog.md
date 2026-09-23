@@ -7,6 +7,9 @@
   when available and records the resolved backend in `.run.log`.
 - Added indexed interval-window and nearest-gene queries to reduce repeated
   full-reference scans.
+- Made `peak2gene` output voom-compatible: rows are chromosome/start sorted,
+  grouped names and IDs are lexical, promoter and distal assignments are
+  mutually exclusive, and closest-gene ties follow reference order.
 - Added short command-line aliases and documented the legacy `voom2anno.sh`
   equivalence for peak-to-gene runs.
 - Added regression coverage for backend resolution, distance compatibility,

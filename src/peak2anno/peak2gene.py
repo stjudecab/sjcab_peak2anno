@@ -202,12 +202,7 @@ def closest_record(index: IntervalIndex, region: InputRegion) -> Tuple[Optional[
     best: Optional[Tuple[BedRecord, int]] = None
     for record in candidates:
         dist = distance_bp(region.start, region.end, record.start, record.end)
-        if best is None or (dist, record.start, record.name, record.gene_id) < (
-            best[1],
-            best[0].start,
-            best[0].name,
-            best[0].gene_id,
-        ):
+        if best is None or dist < best[1]:
             best = (record, dist)
     if best is None:
         return None, None
@@ -217,7 +212,11 @@ def closest_record(index: IntervalIndex, region: InputRegion) -> Tuple[Optional[
 def names_and_ids(records: Iterable[BedRecord]) -> Tuple[str, str]:
     """Return comma-separated unique gene symbols and IDs."""
     rows = list(records)
-    return unique_join(record.name for record in rows), unique_join(record.gene_id for record in rows)
+    # winandgroup.sh emits each distinct grouped column in lexical order;
+    # sort names and IDs independently to match its two output columns.
+    names = unique_join(sorted(record.name for record in rows))
+    ids = unique_join(sorted(record.gene_id for record in rows))
+    return names, ids
 
 
 def annotate_peak2gene(config: PeakGeneConfig) -> Path:
@@ -264,18 +263,21 @@ def annotate_peak2gene(config: PeakGeneConfig) -> Path:
         "Gencode_id",
         "Distance",
     ]
-    rows: List[Sequence[object]] = []
+    rows: List[Tuple[str, int, int, Sequence[object]]] = []
     for region in regions:
         promoter_records_for_region = promoter_records(index, region, upstream_cutoff, downstream_cutoff)
-        outer = nearby_records(index, region, enhancer_cutoff)
-        promoter_set = set(promoter_records_for_region)
-        distal = [(record, dist) for record, dist in outer if record not in promoter_set]
+        # Match voom2anno.sh: distal/enhancer genes are reported only for
+        # peaks without a promoter assignment.  This keeps the two columns
+        # mutually exclusive and avoids substantially larger output tables.
+        distal = [] if promoter_records_for_region else nearby_records(index, region, enhancer_cutoff)
         promoter_names, promoter_ids = names_and_ids(promoter_records_for_region)
         distal_names, distal_ids = names_and_ids(record for record, _ in distal)
         closest, distance = closest_record(index, region)
-        rows.append(
-            output_region_values(region, region.values, output_format)
-            + [
+        rows.append((
+            region.chrom,
+            region.start,
+            region.end,
+            output_region_values(region, region.values, output_format) + [
                 promoter_names,
                 promoter_ids,
                 distal_names,
@@ -283,7 +285,8 @@ def annotate_peak2gene(config: PeakGeneConfig) -> Path:
                 closest.name if closest else ".",
                 closest.gene_id if closest else ".",
                 distance if distance is not None else ".",
-            ]
-        )
-    write_table(config.output_path, out_header, rows, include_header=output_format == "txt")
+            ],
+        ))
+    rows.sort(key=lambda row: (row[0], row[1], row[2]))
+    write_table(config.output_path, out_header, (row[3] for row in rows), include_header=output_format == "txt")
     return config.output_path
