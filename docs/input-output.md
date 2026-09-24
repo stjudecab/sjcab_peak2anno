@@ -57,3 +57,9 @@ peak2anno peak2gene peaks.bed --tss-bed tests_data/tss.bed \
 Feature and state output modes are controlled by `--output-mode` and can emit
 the maximum assignment, ordered percentages, or both. Feature percentages
 allocate each overlapping base to the first feature in `order.lst`.
+Use `--order-lst` to choose a custom feature priority list; `def`, `default`,
+and `none` select the database-root `order.lst`, while `utr` selects
+`order.utr.lst`.
+Check the selected order list for feature meanings. For two-column order
+lists, the second column is used as the output feature name; standard feature
+names are used when a mapping is not found.

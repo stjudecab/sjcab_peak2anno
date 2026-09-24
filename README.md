@@ -16,6 +16,7 @@ Read the full documentation at
 - [Configuration](https://github.com/stjudecab/sjcab_peak2anno/blob/master/docs/configuration.md)
 - [Commands](https://github.com/stjudecab/sjcab_peak2anno/blob/master/docs/commands.md)
 - [Input and output](https://github.com/stjudecab/sjcab_peak2anno/blob/master/docs/input-output.md)
+- [Python API](https://github.com/stjudecab/sjcab_peak2anno/blob/master/docs/api.md)
 - [Changelog](https://github.com/stjudecab/sjcab_peak2anno/blob/master/docs/changelog.md)
 
 ## Install
@@ -77,4 +78,3 @@ Representative loop output contains separate anchor columns:
 chr1 100000 101000 chr1 200000 201000 anchor1_Closest_Gene anchor2_Closest_Gene
 chr1 100000 101000 chr1 200000 201000 GeneA                 GeneC
 ```
-

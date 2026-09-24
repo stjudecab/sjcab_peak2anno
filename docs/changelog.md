@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Renamed the Python package and source directory to `sjcab_peak2anno`; the
+  shorter `peak2anno` name is retained only as a CLI alias.
+- Added `docs/api.md` with Python API examples using canonical
+  `sjcab_peak2anno` imports.
 - Added selectable interval backends with `--backend`/`-b` and the
   `SJCAB_PEAK2ANNO_BACKEND` configuration setting. `auto` prefers `bedtools`
   when available and records the resolved backend in `.run.log`.
@@ -10,6 +14,11 @@
 - Made `peak2gene` output voom-compatible: rows are chromosome/start sorted,
   grouped names and IDs are lexical, promoter and distal assignments are
   mutually exclusive, and closest-gene ties follow reference order.
+- Added `--order-lst`/`-O` for feature priority ordering, including database
+  defaults and the `utr` shorthand for `order.utr.lst`.
+- Made default feature discovery independent of numeric cutoff prefixes and
+  added two-column order-list feature-name mappings.
+- Added 5'UTR and 3'UTR to the default feature set.
 - Added short command-line aliases and documented the legacy `voom2anno.sh`
   equivalence for peak-to-gene runs.
 - Added regression coverage for backend resolution, distance compatibility,

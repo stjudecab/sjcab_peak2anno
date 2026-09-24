@@ -42,15 +42,15 @@ plot = ["matplotlib>=3.5"]
 test = ["pytest>=7"]
 
 [project.scripts]
-peak2anno = "peak2anno.cli:main"
-sjcab-peak2anno = "peak2anno.cli:main"
-sjcab_peak2anno = "peak2anno.cli:main"
+peak2anno = "sjcab_peak2anno.cli:main"
+sjcab-peak2anno = "sjcab_peak2anno.cli:main"
+sjcab_peak2anno = "sjcab_peak2anno.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools_scm]
-version_file = "src/peak2anno/_version.py"
+version_file = "src/sjcab_peak2anno/_version.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

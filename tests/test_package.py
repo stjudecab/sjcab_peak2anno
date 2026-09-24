@@ -11,18 +11,19 @@ from pathlib import Path
 
 import pytest
 
-from peak2anno.feature import (
+from sjcab_peak2anno.features import (
     FeatureConfig,
     StateConfig,
     annotate_broad_feature,
     annotate_narrow_feature,
     annotate_peak_state,
+    resolve_features,
 )
-from peak2anno.cli import build_parser, main
-from peak2anno.config import load_settings
-from peak2anno.intervals import read_regions
-from peak2anno.peak2gene import PeakGeneConfig, annotate_peak2gene, promoter_records
-from peak2anno.runtime import ToolStatus, resolve_backend
+from sjcab_peak2anno.cli import build_parser, main
+from sjcab_peak2anno.config import load_settings
+from sjcab_peak2anno.intervals import read_regions
+from sjcab_peak2anno.peak2gene import PeakGeneConfig, annotate_peak2gene, promoter_records
+from sjcab_peak2anno.runtime import ToolStatus, resolve_backend
 
 
 def write(path: Path, text: str) -> Path:
@@ -104,6 +105,8 @@ def make_feature_dir(tmp_path: Path) -> Path:
     files = {
         "2kb.promoter.up.bed": "chr1\t0\t100\n",
         "2kb.promoter.down.bed": "",
+        "2kb.5utr.bed": "",
+        "2kb.3utr.bed": "",
         "2kb.exon.bed": "chr1\t50\t250\n",
         "2kb.intron.bed": "",
         "2kb.tes.bed": "",
@@ -287,13 +290,35 @@ def test_feature_percent_mode_uses_order_list(tmp_path: Path) -> None:
         )
     )
     rows = read_tsv(output)
-    assert rows[0][-8:-5] == ["Exon_percent", "Promoter.Up_percent", "Promoter.Down_percent"]
-    assert rows[1][-8:-5] == ["75.000000", "25.000000", "0.000000"]
+    selected = ["Exon_percent", "Promoter.Up_percent", "Promoter.Down_percent"]
+    assert [rows[0].index(name) for name in selected] == sorted(rows[0].index(name) for name in selected)
+    assert [rows[1][rows[0].index(name)] for name in selected] == ["75.000000", "25.000000", "0.000000"]
+
+
+def test_feature_order_list_can_come_from_database_or_utr_alias(tmp_path: Path) -> None:
+    """Feature ordering supports DB_PATH/order.lst and order.utr.lst."""
+    feature = make_feature_dir(tmp_path)
+    db = tmp_path / "db"
+    write(db / "order.lst", "intergenic IntergenicFeature\nexon ExonFeature\n")
+    write(db / "order.utr.lst", "intron UTRIntron\nexon UTRExon\n")
+    config = FeatureConfig(input_path=tmp_path / "peaks.bed", output_path=None, species="toy", db_path=str(db), feature_dir=feature)
+    assert resolve_features(config)[0].label == "IntergenicFeature"
+    assert resolve_features(FeatureConfig(**{**config.__dict__, "order_lst": "utr"}))[0].label == "UTRIntron"
+
+
+def test_feature_discovery_does_not_assume_two_kb_prefix(tmp_path: Path) -> None:
+    """Default feature discovery matches semantic suffixes."""
+    feature = make_feature_dir(tmp_path)
+    for path in feature.glob("2kb.*.bed"):
+        path.rename(path.with_name(path.name.replace("2kb.", "10kb.")))
+    config = FeatureConfig(input_path=tmp_path / "peaks.bed", output_path=None, species="toy", feature_dir=feature)
+    specs = resolve_features(config)
+    assert specs[0].path.name == "10kb.promoter.up.bed"
 
 
 def test_promoter_cutoffs_are_strand_aware() -> None:
     """Upstream/downstream promoter windows should follow the gene strand."""
-    from peak2anno.intervals import BedRecord, InputRegion, IntervalIndex
+    from sjcab_peak2anno.intervals import BedRecord, InputRegion, IntervalIndex
 
     records = [
         BedRecord("chr1", 100, 101, ("chr1", "100", "101", "plus", ".", "+")),
@@ -338,8 +363,8 @@ def test_missing_database_reference_can_be_installed(
         write(db / "missing" / "v9" / "all.gene.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\n")
         return subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr("peak2anno.cli.shutil.which", lambda _name: "/fake/sjcab-peak2anno-db")
-    monkeypatch.setattr("peak2anno.cli.subprocess.run", fake_install)
+    monkeypatch.setattr("sjcab_peak2anno.cli.shutil.which", lambda _name: "/fake/sjcab-peak2anno-db")
+    monkeypatch.setattr("sjcab_peak2anno.cli.subprocess.run", fake_install)
     assert main(["peak2gene", str(peaks), "-s", "missing", "--ver", "v9", "-d", str(db)]) == 0
     assert "GeneA" in capsys.readouterr().out
 

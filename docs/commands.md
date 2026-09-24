@@ -15,14 +15,55 @@ peak2anno peak2state peaks.bed --states dense_states.bed
 - `broad2feature` reports overlap percentages for every feature.
 - `peak2state` reports chromatin-state overlap.
 
+Default feature files include promoter, 5'UTR, 3'UTR, exon, intron, TES, and
+distal/intergenic regions. Feature priority can be selected for
+`narrow2feature`, `broad2feature`, `loop2feature`, and corresponding combined
+feature steps:
+
+- `-O/--order-lst def|default|none`: use `DB_PATH/order.lst`.
+- `-O/--order-lst utr`: use `DB_PATH/order.utr.lst`.
+- `-O/--order-lst PATH`: use a custom order list.
+
+```bash
+peak2anno narrow2feature peaks.bed --db-path "$HOME/.sjcab_peak2anno_db" \
+  --order-lst order.lst -o features.tsv
+peak2anno broad2feature peaks.bed --order-lst utr -o features.utr.tsv
+```
+
+The default values `def`, `default`, and `none` use `order.lst` under the
+database root. `utr` uses `order.utr.lst` under the database root. A custom
+path may also be supplied. If the database-root default is absent, a
+neighboring `order.lst` in the feature directory is used for compatibility.
+Inspect the selected order list to confirm the meaning of each feature; a
+two-column list uses column 2 as the output feature name.
+
 All commands show resolved defaults with `-h` and accept positional input or
 `-i/--input`. Omit `-o/--output` to write the main table to stdout.
 
-Common short aliases include `-f/--output-format`, `-I/--input-format`,
-`-H/--header`, `-C/--columns`, `-R/--region-column`, `-g/--gene-bed`,
-`-t/--tss-bed`, `-x/--overlap-cutoff`, and `-m/--summary`. The database
-installation controls are `-a/--auto-install-db` and
-`-A/--no-auto-install-db`; the original long forms remain supported.
+Common options include:
+
+- `-i/--input`: input BED, BEDPE, or text file.
+- `-o/--output`: output file; omit it to write the main table to stdout.
+- `-f/--output-format`: `auto`, `bed`, `bedpe`, `txt`, or `txtnohead`.
+- `-I/--input-format`: `auto`, `bed`, `txt`, or `txtnohead`.
+- `-H/--header`: `auto`, `yes`, or `no`.
+- `-C/--columns`: zero-based BED coordinate columns.
+- `-R/--region-column`: zero-based text-region column.
+- `-b/--backend`: `auto`, `bedtools`, `pybedtools`, or `python`.
+- `-x/--overlap-cutoff`: minimum overlap threshold.
+- `-m/--summary`: summary output path.
+- `-p/--plot`: write summary plots.
+- `-a/--auto-install-db`: offer to install missing database files.
+- `-A/--no-auto-install-db`: disable database installation.
+
+Gene-reference options include:
+
+- `-s/--species`: species key.
+- `--ver/--species-version`: annotation version.
+- `--iso/--isoform-set`: `all` or `deduplong`.
+- `-g/--gene-bed`: explicit gene BED.
+- `-t/--tss-bed`: explicit TSS BED.
+- `-G/--gene-type`: gene-type filter.
 
 ## Combining commands
 
@@ -60,27 +101,15 @@ peak2anno loop2state loops.bedpe --states states.bed \
   --output-format bedpe -o loops.states.bedpe
 ```
 
-## Equivalent to `voom2anno.sh`
-
-For the legacy command
-`voom2anno.sh bed peaks.bed mm10 2000 50000 XX`, use explicit settings:
-
-```bash
-peak2anno peak2gene -i peaks.bed -s mm10 --ver vM22 \
-  --gene-type all --prom-enha-cutoffs 2kb,50kb,2kb \
-  --output-format txt -o peaks.tsv
-```
-
-Here `XX` selects the legacy gencode branch; it is not a gene-type value.
-`peak2anno` resolves `mm10` to the selected database version and uses the
-same promoter and enhancer distances. Its text output includes a header;
-the annotation columns are `Gene_2kb`, `Gencode_ids`, `Gene_2kb-50kb`,
-`Gencode_ids`, `Closest_Gene`, `Gencode_id`, and `Distance`.
-
 ## Gene filters
 
-`--gene-type` filters BED column 9. Supported shortcuts include `all`,
-`protein_coding`, `lincRNA`, `nomicro`, or a comma-separated custom list.
+`--gene-type` filters BED column 9. Supported values include:
+
+- `all`
+- `protein_coding`
+- `lincRNA`
+- `nomicro`
+- A comma-separated custom list.
 
 ## Run logs
 

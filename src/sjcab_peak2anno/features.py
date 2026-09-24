@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from .db import candidate_feature_dirs
+from .db import candidate_feature_dirs, db_root
 from .intervals import (
     BedRecord,
     InputRegion,
@@ -28,14 +28,16 @@ from .plots import write_count_plots
 
 
 DEFAULT_FEATURES = [
-    ("2kb.promoter.up.bed", "Promoter.Up"),
-    ("2kb.promoter.down.bed", "Promoter.Down"),
-    ("2kb.exon.bed", "Exon"),
-    ("2kb.intron.bed", "Intron"),
-    ("2kb.tes.bed", "TES (transcription end sites)"),
-    ("2kb.dis5.bed", "Dis5 (5' distal regions)"),
-    ("2kb.dis3.bed", "Dis3 (3' distal regions)"),
-    ("2kb.intergenic.bed", "Intergenic"),
+    (".promoter.up.bed", "Promoter.Up"),
+    (".promoter.down.bed", "Promoter.Down"),
+    (".5utr.bed", "5UTR"),
+    (".3utr.bed", "3UTR"),
+    (".exon.bed", "Exon"),
+    (".intron.bed", "Intron"),
+    (".tes.bed", "TES"),
+    (".dis5.bed", "Dis5"),
+    (".dis3.bed", "Dis3"),
+    (".intergenic.bed", "Intergenic"),
 ]
 
 
@@ -70,6 +72,7 @@ class FeatureConfig:
     output_mode: str = "legacy"
     txt_delimiter: str = "auto"
     backend: str = "python"
+    order_lst: str = "def"
 
 
 @dataclass(frozen=True)
@@ -112,7 +115,7 @@ def resolve_feature_dir(species: str, db_path: Optional[str], explicit: Optional
             raise FileNotFoundError(f"--feature-dir does not exist: {explicit}")
         return explicit
     for candidate in candidate_feature_dirs(species, root_path=db_path):
-        if (candidate / DEFAULT_FEATURES[0][0]).is_file():
+        if any(candidate.glob(f"*{DEFAULT_FEATURES[0][0]}")):
             return candidate
     searched = "\n".join(str(path) for path in candidate_feature_dirs(species, root_path=db_path))
     raise FileNotFoundError(
@@ -125,8 +128,8 @@ def resolve_features(config: FeatureConfig) -> List[FeatureSpec]:
     """Resolve feature BED files and labels."""
     feature_dir = resolve_feature_dir(config.species, config.db_path, config.feature_dir)
     if config.features is None and config.feature_labels is None:
-        specs = [FeatureSpec(feature_dir / filename, label) for filename, label in DEFAULT_FEATURES]
-        return order_feature_specs(specs)
+        specs = [FeatureSpec(_default_feature_path(feature_dir, suffix), label) for suffix, label in DEFAULT_FEATURES]
+        return order_feature_specs(specs, resolve_order_path(config, feature_dir))
     if config.features is None or config.feature_labels is None:
         raise ValueError("--features and --feature-labels must be provided together")
     feature_values = read_list_or_csv(config.features, base_dir=feature_dir)
@@ -139,7 +142,16 @@ def resolve_features(config: FeatureConfig) -> List[FeatureSpec]:
         if not path.is_absolute():
             path = feature_dir / path
         specs.append(FeatureSpec(path, label))
-    return order_feature_specs(specs)
+    return order_feature_specs(specs, resolve_order_path(config, feature_dir))
+
+
+def _default_feature_path(feature_dir: Path, suffix: str) -> Path:
+    """Find a feature BED by semantic suffix, independent of its cutoff."""
+    matches = sorted(feature_dir.glob(f"*{suffix}"))
+    if matches:
+        return matches[0]
+    # Keep the eventual error specific to the missing semantic feature.
+    return feature_dir / suffix.lstrip(".")
 
 
 def _order_key(value: str) -> str:
@@ -149,27 +161,70 @@ def _order_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value)
 
 
-def order_feature_specs(specs: Sequence[FeatureSpec]) -> List[FeatureSpec]:
-    """Apply a neighboring ``order.lst`` when one is available."""
+def resolve_order_path(config: FeatureConfig, feature_dir: Path) -> Optional[Path]:
+    """Resolve the feature priority list from the CLI value and database root.
+
+    ``def``, ``default``, and ``none`` select ``order.lst`` in the database
+    root.  ``utr`` selects ``order.utr.lst`` there.  A path is used directly.
+    For compatibility with older feature directories, the default also falls
+    back to a neighboring ``order.lst`` when the database copy is absent.
+    """
+    value = str(config.order_lst or "def").strip()
+    root = db_root(config.db_path)
+    if value.lower() in {"def", "default", "none"}:
+        database_order = root / "order.lst"
+        if database_order.is_file():
+            return database_order
+        neighboring = feature_dir / "order.lst"
+        return neighboring if neighboring.is_file() else None
+    if value.lower() == "utr":
+        return root / "order.utr.lst"
+    path = Path(value).expanduser()
+    return path if path.is_file() else (_raise_missing_order(path))
+
+
+def _raise_missing_order(path: Path) -> Path:
+    """Raise a useful error for an explicitly requested order list."""
+    raise FileNotFoundError(f"Order list does not exist: {path}")
+
+
+def order_feature_specs(specs: Sequence[FeatureSpec], order_path: Optional[Path] = None) -> List[FeatureSpec]:
+    """Apply the selected feature priority list when one is available."""
     if not specs:
         return []
-    order_path = specs[0].path.parent / "order.lst"
-    if not order_path.is_file():
+    if order_path is None or not order_path.is_file():
         return list(specs)
-    positions = _order_positions(order_path)
+    positions, names = _order_entries(order_path)
     return sorted(
-        specs,
-        key=lambda spec: (positions.get(_order_key(spec.label), positions.get(_order_key(spec.path.name), len(positions))),),
+        [
+            FeatureSpec(
+                spec.path,
+                names.get(_order_key(spec.path.name), names.get(_order_key(spec.label), spec.label)),
+            )
+            for spec in specs
+        ],
+        key=lambda spec: (positions.get(_order_key(spec.path.name), positions.get(_order_key(spec.label), len(positions))),),
     )
+
+
+def _order_entries(order_path: Path) -> Tuple[Dict[str, int], Dict[str, str]]:
+    """Read order positions and optional second-column feature names."""
+    positions: Dict[str, int] = {}
+    names: Dict[str, str] = {}
+    for index, line in enumerate(order_path.read_text(encoding="utf-8").splitlines()):
+        fields = line.split()
+        if not fields or fields[0].startswith("#"):
+            continue
+        key = _order_key(fields[0])
+        positions[key] = index
+        if len(fields) > 1:
+            names[key] = fields[1]
+    return positions, names
 
 
 def _order_positions(order_path: Path) -> Dict[str, int]:
     """Read an order list into normalized-name positions."""
-    return {
-        _order_key(line): index
-        for index, line in enumerate(order_path.read_text(encoding="utf-8").splitlines())
-        if line.strip() and not line.startswith("#")
-    }
+    return _order_entries(order_path)[0]
 
 
 def order_labels(labels: Sequence[str], order_path: Path) -> List[str]:

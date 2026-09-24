@@ -23,6 +23,7 @@ from .features import (
     annotate_broad_feature,
     annotate_narrow_feature,
     annotate_peak_state,
+    resolve_order_path,
     resolve_features,
 )
 from .config import Settings, load_settings
@@ -52,6 +53,10 @@ def add_common_feature_args(parser: argparse.ArgumentParser, settings: Settings)
     parser.add_argument("-f", "--output-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows input format.")
     parser.add_argument("-F", "--features", help="Comma-separated feature BEDs or .lst file.")
     parser.add_argument("-L", "--feature-labels", help="Comma-separated feature labels or .labels.lst file.")
+    parser.add_argument(
+        "-O", "--order-lst", default="def",
+        help="Feature priority list; inspect order.lst for feature meanings. def/default/none uses DB_PATH/order.lst; utr uses DB_PATH/order.utr.lst; or provide a path.",
+    )
     parser.add_argument(
         "-x", "--overlap-cutoff",
         default="1bp",
@@ -246,6 +251,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         loop.add_argument("-t", "--tss-bed", type=Path, help="Override TSS BED.")
         loop.add_argument("-g", "--gene-bed", type=Path, help="Override gene BED.")
         loop.add_argument("-c", "--feature-dir", type=Path, help="Feature BED directory.")
+        loop.add_argument("-O", "--order-lst", default="def", help="Feature priority list; inspect order.lst for feature meanings. def/default/none uses DB_PATH/order.lst, utr uses DB_PATH/order.utr.lst.")
         loop.add_argument("-B", "--feature-mode", choices=["narrow", "broad"], default="narrow", help="Feature mode.")
         loop.add_argument("-x", "--overlap-cutoff", default="1bp", help="Minimum overlap.")
         loop.add_argument("-S", "--states", type=Path, help="Chromatin state BED.")
@@ -266,6 +272,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     combined.add_argument("-t", "--tss-bed", type=Path, help="Override TSS BED.")
     combined.add_argument("-g", "--gene-bed", type=Path, help="Override gene BED.")
     combined.add_argument("-c", "--feature-dir", type=Path, help="Feature BED directory.")
+    combined.add_argument("-O", "--order-lst", default="def", help="Feature priority list; inspect order.lst for feature meanings. def/default/none uses DB_PATH/order.lst, utr uses DB_PATH/order.utr.lst.")
     combined.add_argument("--features", help="Feature BEDs.")
     combined.add_argument("--feature-labels", help="Feature labels.")
     combined.add_argument("--gene-type", default=settings.gene_type, help="Gene type filter.")
@@ -340,6 +347,7 @@ def run(args: argparse.Namespace) -> Optional[Path]:
                 output_mode=args.output_mode,
                 txt_delimiter=args.txt_delimiter,
                 backend=args.backend,
+                order_lst=args.order_lst,
             )
         )
         return output
@@ -364,6 +372,7 @@ def run(args: argparse.Namespace) -> Optional[Path]:
                 output_mode=args.output_mode,
                 txt_delimiter=args.txt_delimiter,
                 backend=args.backend,
+                order_lst=args.order_lst,
             )
         )
         return output
@@ -413,6 +422,7 @@ def run(args: argparse.Namespace) -> Optional[Path]:
             states=args.states,
             state2name=args.state2name,
             backend=args.backend,
+            order_lst=args.order_lst,
         )
     if args.command == "combined":
         return run_combined(args)
@@ -548,9 +558,15 @@ def resolved_references(args: argparse.Namespace) -> list[str]:
             feature_dir=args.feature_dir,
             features=args.features,
             feature_labels=args.feature_labels,
+            order_lst=args.order_lst,
         )
-        for spec in resolve_features(config):
+        specs = resolve_features(config)
+        for spec in specs:
             references.append(f"feature {spec.label}: {spec.path.expanduser().resolve()}")
+        feature_dir = specs[0].path.parent if specs else (config.feature_dir or config.input_path.parent)
+        order_path = resolve_order_path(config, feature_dir)
+        if order_path is not None:
+            references.append(f"feature order: {order_path.expanduser().resolve()}")
     elif args.command == "peak2state":
         references.append(f"states: {args.states.expanduser().resolve()}")
         if args.state2name is not None:

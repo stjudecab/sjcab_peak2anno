@@ -14,6 +14,7 @@ nav:
   - Configuration: configuration.md
   - Commands: commands.md
   - Input and output: input-output.md
+  - Python API: api.md
   - Changelog: changelog.md
 
 markdown_extensions:
