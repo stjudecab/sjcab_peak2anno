@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from concurrent.futures import ProcessPoolExecutor
 import tempfile
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
@@ -62,6 +63,21 @@ def _read_table(path: Path) -> Tuple[List[str], List[List[str]]]:
     return rows[0], rows[1:]
 
 
+def _annotate_loop_anchor(task: Tuple[str, Path, Path, dict[str, object]]) -> Tuple[List[str], List[List[str]]]:
+    """Annotate one loop anchor; kept top-level for process-pool pickling."""
+    command, anchor_input, anchor_output, kwargs = task
+    if command == "loop2gene":
+        annotate_peak2gene(PeakGeneConfig(input_path=anchor_input, output_path=anchor_output, species=str(kwargs["species"]), species_version=str(kwargs["species_version"]), isoform_version=str(kwargs["isoform_version"]), prom_enha_cutoffs=str(kwargs.get("prom_enha_cutoffs", "2kb,50kb,2kb")), gene_type=str(kwargs.get("gene_type", "all")), db_path=kwargs.get("db_path"), tss_bed=kwargs.get("tss_bed"), gene_bed=kwargs.get("gene_bed"), output_format="txt", backend=str(kwargs.get("backend", "python"))))
+    elif command == "loop2feature":
+        config = FeatureConfig(input_path=anchor_input, output_path=anchor_output, species=str(kwargs["species"]), db_path=kwargs.get("db_path"), feature_dir=kwargs.get("feature_dir"), overlap_cutoff=str(kwargs["overlap_cutoff"]), output_mode=str(kwargs.get("output_mode", "legacy")), output_format="txt", backend=str(kwargs.get("backend", "python")), order_lst=str(kwargs.get("order_lst", "def")))
+        (annotate_broad_feature if kwargs.get("feature_mode") == "broad" else annotate_narrow_feature)(config)
+    elif command == "loop2state":
+        annotate_peak_state(StateConfig(input_path=anchor_input, output_path=anchor_output, states_path=Path(str(kwargs["states"])), state2name=kwargs.get("state2name"), overlap_cutoff=str(kwargs["overlap_cutoff"]), output_mode=str(kwargs.get("output_mode", "legacy")), output_format="txt", backend=str(kwargs.get("backend", "python"))))
+    else:
+        raise ValueError(f"Unknown loop command: {command}")
+    return _read_table(anchor_output)
+
+
 def annotate_loop(
     command: str,
     input_path: Path,
@@ -84,21 +100,18 @@ def annotate_loop(
             output_format = "bedpe" if all(fields[index].lstrip("-").isdigit() for index in (loop_columns[1], loop_columns[2], loop_columns[4], loop_columns[5])) else "txt"
     with tempfile.TemporaryDirectory(prefix="peak2anno-loop-") as temp:
         temp_root = Path(temp)
-        anchor_outputs = []
+        tasks = []
         for side in (1, 2):
             anchor_input = temp_root / f"anchor{side}.bed"
             anchor_output = temp_root / f"anchor{side}.tsv"
             _write_anchor(anchor_input, rows, side)
-            if command == "loop2gene":
-                annotate_peak2gene(PeakGeneConfig(input_path=anchor_input, output_path=anchor_output, species=str(kwargs["species"]), species_version=str(kwargs["species_version"]), isoform_version=str(kwargs["isoform_version"]), prom_enha_cutoffs=str(kwargs.get("prom_enha_cutoffs", "2kb,50kb,2kb")), gene_type=str(kwargs.get("gene_type", "all")), db_path=kwargs.get("db_path"), tss_bed=kwargs.get("tss_bed"), gene_bed=kwargs.get("gene_bed"), output_format="txt", backend=str(kwargs.get("backend", "python"))))
-            elif command == "loop2feature":
-                config = FeatureConfig(input_path=anchor_input, output_path=anchor_output, species=str(kwargs["species"]), db_path=kwargs.get("db_path"), feature_dir=kwargs.get("feature_dir"), overlap_cutoff=str(kwargs["overlap_cutoff"]), output_mode=str(kwargs.get("output_mode", "legacy")), output_format="txt", backend=str(kwargs.get("backend", "python")), order_lst=str(kwargs.get("order_lst", "def")))
-                (annotate_broad_feature if kwargs.get("feature_mode") == "broad" else annotate_narrow_feature)(config)
-            elif command == "loop2state":
-                annotate_peak_state(StateConfig(input_path=anchor_input, output_path=anchor_output, states_path=Path(str(kwargs["states"])), state2name=kwargs.get("state2name"), overlap_cutoff=str(kwargs["overlap_cutoff"]), output_mode=str(kwargs.get("output_mode", "legacy")), output_format="txt", backend=str(kwargs.get("backend", "python"))))
-            else:
-                raise ValueError(f"Unknown loop command: {command}")
-            anchor_outputs.append(_read_table(anchor_output))
+            tasks.append((command, anchor_input, anchor_output, dict(kwargs)))
+        workers = max(1, int(kwargs.get("workers", 1)))
+        if workers > 1:
+            with ProcessPoolExecutor(max_workers=min(workers, 2)) as executor:
+                anchor_outputs = list(executor.map(_annotate_loop_anchor, tasks))
+        else:
+            anchor_outputs = [_annotate_loop_anchor(task) for task in tasks]
         left_header, left_rows = anchor_outputs[0]
         right_header, right_rows = anchor_outputs[1]
         output_header = list(input_header) + [f"anchor1_{name}" for name in left_header[4:]] + [f"anchor2_{name}" for name in right_header[4:]]

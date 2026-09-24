@@ -39,18 +39,17 @@ def read_tsv(path: Path) -> list[list[str]]:
         return list(csv.reader(handle, delimiter="\t"))
 
 
-def test_backend_auto_prefers_bedtools() -> None:
-    """auto should prefer the native executable over the Python wrapper."""
-    status = ToolStatus(bedtools="/usr/bin/bedtools", pybedtools=True)
-    assert resolve_backend("auto", status) == "bedtools"
-    assert resolve_backend("pybedtools", status) == "pybedtools"
-    assert resolve_backend("auto", ToolStatus(bedtools=None, pybedtools=False)) == "python"
+def test_backend_auto_uses_python() -> None:
+    """auto should remain on the predictable Python implementation."""
+    status = ToolStatus(bedtools="/usr/bin/bedtools")
+    assert resolve_backend("auto", status) == "python"
+    assert resolve_backend("auto", ToolStatus(bedtools=None)) == "python"
 
 
 def test_backend_rejects_unavailable_tool() -> None:
     """Explicit backend requests should fail clearly when unavailable."""
     with pytest.raises(ValueError, match="bedtools was not found"):
-        resolve_backend("bedtools", ToolStatus(bedtools=None, pybedtools=False))
+        resolve_backend("bedtools", ToolStatus(bedtools=None))
 
 
 def make_toy_db(tmp_path: Path) -> Path:
@@ -230,6 +229,7 @@ def test_common_short_options_parse() -> None:
             "-H", "yes",
             "-C", "0,1,2",
             "-R", "0",
+            "-n", "2",
             "-g", "genes.bed",
             "-t", "tss.bed",
         ]
@@ -238,6 +238,7 @@ def test_common_short_options_parse() -> None:
     assert args.output_format == "txt"
     assert args.input_format == "txt"
     assert args.header == "yes"
+    assert args.workers == 2
     assert args.columns == "0,1,2"
     assert args.region_column == 0
     assert args.gene_bed == Path("genes.bed")
@@ -405,7 +406,7 @@ def test_loop2gene_merges_two_anchor_annotations(tmp_path: Path, capsys: pytest.
     loops = write(tmp_path / "loops.bedpe", "chr1\t50\t150\tchr1\t300\t400\n")
     tss = write(tmp_path / "tss.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\n")
     monkeypatch.chdir(tmp_path)
-    assert main(["loop2gene", str(loops), "--tss-bed", str(tss), "--output-format", "txt"]) == 0
+    assert main(["loop2gene", str(loops), "--tss-bed", str(tss), "--workers", "2", "--output-format", "txt"]) == 0
     output = capsys.readouterr().out
     assert "anchor1_Closest_Gene" in output
     assert "anchor2_Closest_Gene" in output

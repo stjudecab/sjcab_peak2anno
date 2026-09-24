@@ -27,8 +27,6 @@ requirements:
   run:
     - python >=3.7
     - stjudecab::sjcab_peak2anno_db
-    - bedtools >2.16.2
-    - pybedtools
 
 test:
   imports:

@@ -2,13 +2,31 @@
 
 ## Unreleased
 
+- Reworked the interval backend and documentation for reproducible Python and
+  optional bedtools execution, including reviewable one-stage and two-stage
+  bedtools scripts and matching peak-to-gene results.
+- Improved indexed peak-to-gene queries, deterministic sorting and nearest-gene
+  tie handling, feature order-list support, worker options, and regression
+  coverage.
 - Renamed the Python package and source directory to `sjcab_peak2anno`; the
   shorter `peak2anno` name is retained only as a CLI alias.
 - Added `docs/api.md` with Python API examples using canonical
   `sjcab_peak2anno` imports.
-- Added selectable interval backends with `--backend`/`-b` and the
+- Added selectable interval backends through the
   `SJCAB_PEAK2ANNO_BACKEND` configuration setting. `auto` prefers `bedtools`
   when available and records the resolved backend in `.run.log`.
+- Implemented batched single-window `bedtools` queries for fixed-cutoff
+  peak-to-gene annotation while retaining exact Python-compatible results.
+- Removed the `pybedtools` backend and CLI backend options. The backend remains
+  configurable through `SJCAB_PEAK2ANNO_BACKEND`; selected `bedtools` commands
+  are recorded in `bedtools-peak2anno.sh` for review.
+- Changed the default `auto` backend to Python and removed bedtools from pip
+  and conda runtime requirements. Bedtools is now an explicit optional
+  environment-selected backend.
+- Aligned promoter-first and single-wide-window cutoff boundaries so Python
+  and bedtools approaches produce identical peak-to-gene assignments.
+- Generated a standalone raw-BED bedtools review script that emits a
+  package-compatible table with selectable one-window and two-stage modes.
 - Added indexed interval-window and nearest-gene queries to reduce repeated
   full-reference scans.
 - Made `peak2gene` output voom-compatible: rows are chromosome/start sorted,
@@ -19,6 +37,8 @@
 - Made default feature discovery independent of numeric cutoff prefixes and
   added two-column order-list feature-name mappings.
 - Added 5'UTR and 3'UTR to the default feature set.
+- Added default-valued `-n/--workers`; loop anchors can now annotate in
+  parallel and combined steps use the same worker setting.
 - Added short command-line aliases and documented the legacy `voom2anno.sh`
   equivalence for peak-to-gene runs.
 - Added regression coverage for backend resolution, distance compatibility,
@@ -40,7 +60,8 @@
 
 - Renamed the distribution to `sjcab_peak2anno`.
 - Added the `sjcab-peak2anno` CLI alias and pinned `sjcab_peak2anno_db` to 0.1.5.
-- Added `bedtools` and `pybedtools` to the conda runtime dependencies.
+- Previously added bedtools and pybedtools to the conda runtime dependencies;
+  these are no longer required.
 - Lowered the declared Python minimum from 3.9 to 3.7.
 
 ## 2026-07-14

@@ -107,9 +107,8 @@ settings = load_settings()
 print(settings.default_species, settings.version_for(settings.default_species))
 ```
 
-The `backend` value may be `auto`, `bedtools`, `pybedtools`, or `python`.
-`auto` prefers the native `bedtools` executable when available. The
-`pybedtools` backend requires both `pybedtools` and `bedtools`.
+The `backend` value may be `auto`, `bedtools`, or `python`.
+`auto` prefers the native `bedtools` executable when available.
 
 Feature BED files are discovered by semantic suffixes such as
 `.promoter.up.bed`, `.5utr.bed`, and `.exon.bed`, so their numeric cutoff

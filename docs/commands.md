@@ -20,7 +20,7 @@ distal/intergenic regions. Feature priority can be selected for
 `narrow2feature`, `broad2feature`, `loop2feature`, and corresponding combined
 feature steps:
 
-- `-O/--order-lst def|default|none`: use `DB_PATH/order.lst`.
+- `-O/--order-lst def|default|none` (default: def): use `DB_PATH/order.lst`.
 - `-O/--order-lst utr`: use `DB_PATH/order.utr.lst`.
 - `-O/--order-lst PATH`: use a custom order list.
 
@@ -42,28 +42,28 @@ All commands show resolved defaults with `-h` and accept positional input or
 
 Common options include:
 
-- `-i/--input`: input BED, BEDPE, or text file.
-- `-o/--output`: output file; omit it to write the main table to stdout.
-- `-f/--output-format`: `auto`, `bed`, `bedpe`, `txt`, or `txtnohead`.
-- `-I/--input-format`: `auto`, `bed`, `txt`, or `txtnohead`.
-- `-H/--header`: `auto`, `yes`, or `no`.
-- `-C/--columns`: zero-based BED coordinate columns.
-- `-R/--region-column`: zero-based text-region column.
-- `-b/--backend`: `auto`, `bedtools`, `pybedtools`, or `python`.
-- `-x/--overlap-cutoff`: minimum overlap threshold.
-- `-m/--summary`: summary output path.
-- `-p/--plot`: write summary plots.
-- `-a/--auto-install-db`: offer to install missing database files.
-- `-A/--no-auto-install-db`: disable database installation.
+- `-i/--input` (default: positional input; required): input BED, BEDPE, or text file.
+- `-o/--output` (default: stdout): output file.
+- `-f/--output-format` (default: auto): `auto`, `bed`, `bedpe`, `txt`, or `txtnohead`.
+- `-I/--input-format` (default: auto): `auto`, `bed`, `txt`, or `txtnohead`.
+- `-H/--header` (default: auto): `auto`, `yes`, or `no`.
+- `-C/--columns` (default: 0,1,2): zero-based BED coordinate columns.
+- `-R/--region-column` (default: 0): zero-based text-region column.
+- `-n/--workers` (default: 1): worker processes; loop anchors and combined steps can run in parallel.
+- `-x/--overlap-cutoff` (default: 1bp): minimum overlap threshold.
+- `-m/--summary` (default: none): summary output path.
+- `-p/--plot` (default: false): write summary plots.
+- `-a/--auto-install-db` (default: false): offer to install missing database files.
+- `-A/--no-auto-install-db` (default: disabled): disable database installation.
 
 Gene-reference options include:
 
-- `-s/--species`: species key.
-- `--ver/--species-version`: annotation version.
-- `--iso/--isoform-set`: `all` or `deduplong`.
-- `-g/--gene-bed`: explicit gene BED.
-- `-t/--tss-bed`: explicit TSS BED.
-- `-G/--gene-type`: gene-type filter.
+- `-s/--species` (default: configured species, usually hg38): species key.
+- `--ver/--species-version` (default: configured version, usually v31): annotation version.
+- `--iso/--isoform-set` (default: all): `all` or `deduplong`.
+- `-g/--gene-bed` (default: database reference): explicit gene BED.
+- `-t/--tss-bed` (default: computed from gene BED): explicit TSS BED.
+- `-G/--gene-type` (default: all): gene-type filter.
 
 ## Combining commands
 
@@ -116,3 +116,19 @@ peak2anno loop2state loops.bedpe --states states.bed \
 Every run appends its command line and resolved input/reference files to
 `.run.log`. Use `--summary` and `--plot` when a feature/state summary is also
 needed.
+
+The interval backend is configured through `SJCAB_PEAK2ANNO_BACKEND` in the
+RC file or environment (`auto`, `bedtools`, or `python`); it is not a CLI
+option. When `bedtools` is selected, the exact generated commands are also
+appended to `bedtools-peak2anno.sh` for review.
+
+The generated script accepts raw BED input and has both matching strategies:
+
+```bash
+./bedtools-peak2anno.sh 1 one-window.matches.tsv  # one wide bedtools window
+./bedtools-peak2anno.sh 2 two-stage.matches.tsv  # promoter, then enhancer
+```
+
+It uses `bedtools`, `awk`, and `sort` and emits a package-compatible
+peak-to-gene table. Mode 2 is the lower-memory strategy; mode 1 uses one
+bedtools window and can be faster when process startup dominates.

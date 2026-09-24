@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .db import gene_annotation_path
 from .intervals import (
@@ -21,7 +21,13 @@ from .intervals import (
     read_regions,
     unique_join,
     write_table,
+    external_window_records,
+    write_bedtools_review_script,
 )
+from .runtime import detect_tools, resolve_backend
+
+
+EXTERNAL_BATCH_SIZE = 10000
 
 
 @dataclass(frozen=True)
@@ -83,6 +89,13 @@ def nearby_records(
         if fixed_cutoff is not None
         else index.records_for_chrom(region.chrom)
     )
+    return _nearby_from_candidates(candidates, region, cutoff_bp)
+
+
+def _nearby_from_candidates(
+    candidates: Iterable[BedRecord], region: InputRegion, cutoff_bp: object
+) -> List[Tuple[BedRecord, int]]:
+    """Filter candidate records using the package's exact distance semantics."""
     matches: List[Tuple[BedRecord, int]] = []
     for record in candidates:
         dist = distance_bp(region.start, region.end, record.start, record.end)
@@ -106,11 +119,26 @@ def promoter_records(
         if fixed_upstream is not None and fixed_downstream is not None
         else None
     )
+    # ``_promoter_from_candidates`` uses the legacy half-open-side distance
+    # while ``distance_bp`` includes the endpoint.  Retain the boundary
+    # candidate so promoter-first and wide-window classification agree.
+    if fixed_window is not None:
+        fixed_window += 1
     candidates = (
         index.query_window(region.chrom, region.start, region.end, fixed_window)
         if fixed_window is not None
         else index.records_for_chrom(region.chrom)
     )
+    return _promoter_from_candidates(candidates, region, upstream_bp, downstream_bp)
+
+
+def _promoter_from_candidates(
+    candidates: Iterable[BedRecord],
+    region: InputRegion,
+    upstream_bp: object,
+    downstream_bp: object,
+) -> List[BedRecord]:
+    """Filter candidate records using strand-aware promoter cutoffs."""
     matches: List[Tuple[BedRecord, int]] = []
     for record in candidates:
         if region.end <= record.start:
@@ -199,14 +227,14 @@ def cutoff_label(value: str) -> str:
 def closest_record(index: IntervalIndex, region: InputRegion) -> Tuple[Optional[BedRecord], Optional[int]]:
     """Return the closest TSS record and distance for a peak."""
     candidates = index.nearest_candidates(region.chrom, region.start, region.end)
-    best: Optional[Tuple[BedRecord, int]] = None
-    for record in candidates:
-        dist = distance_bp(region.start, region.end, record.start, record.end)
-        if best is None or dist < best[1]:
-            best = (record, dist)
-    if best is None:
+    scored = [
+        (distance_bp(region.start, region.end, record.start, record.end), record.start, record.end, record)
+        for record in candidates
+    ]
+    if not scored:
         return None, None
-    return best
+    distance, _start, _end, record = min(scored, key=lambda item: (item[0], item[1], item[2]))
+    return record, distance
 
 
 def names_and_ids(records: Iterable[BedRecord]) -> Tuple[str, str]:
@@ -243,6 +271,17 @@ def annotate_peak2gene(config: PeakGeneConfig) -> Path:
     )
     tss_records = resolve_tss_records(config)
     index = IntervalIndex(tss_records)
+    backend = resolve_backend(config.backend, detect_tools()) if config.backend != "python" else "python"
+    fixed_cutoffs = [_fixed_cutoff(value) for value in (upstream_cutoff, enhancer_cutoff, downstream_cutoff)]
+    use_external = backend == "bedtools" and all(value is not None for value in fixed_cutoffs)
+    if use_external:
+        write_bedtools_review_script(
+            config.input_path,
+            resolve_tss_path(config),
+            _fixed_cutoff(upstream_cutoff),
+            _fixed_cutoff(enhancer_cutoff),
+            _fixed_cutoff(downstream_cutoff),
+        )
 
     promoter_label = f"{cutoff_label(upstream_cutoff)}up_{cutoff_label(downstream_cutoff)}down"
     if upstream_cutoff == downstream_cutoff:
@@ -264,29 +303,63 @@ def annotate_peak2gene(config: PeakGeneConfig) -> Path:
         "Distance",
     ]
     rows: List[Tuple[str, int, int, Sequence[object]]] = []
-    for region in regions:
-        promoter_records_for_region = promoter_records(index, region, upstream_cutoff, downstream_cutoff)
-        # Match voom2anno.sh: distal/enhancer genes are reported only for
-        # peaks without a promoter assignment.  This keeps the two columns
-        # mutually exclusive and avoids substantially larger output tables.
-        distal = [] if promoter_records_for_region else nearby_records(index, region, enhancer_cutoff)
-        promoter_names, promoter_ids = names_and_ids(promoter_records_for_region)
-        distal_names, distal_ids = names_and_ids(record for record, _ in distal)
-        closest, distance = closest_record(index, region)
-        rows.append((
-            region.chrom,
-            region.start,
-            region.end,
-            output_region_values(region, region.values, output_format) + [
-                promoter_names,
-                promoter_ids,
-                distal_names,
-                distal_ids,
-                closest.name if closest else ".",
-                closest.gene_id if closest else ".",
-                distance if distance is not None else ".",
-            ],
-        ))
+    for batch_start in range(0, len(regions), EXTERNAL_BATCH_SIZE if use_external else len(regions)):
+        batch = regions[batch_start : batch_start + (EXTERNAL_BATCH_SIZE if use_external else len(regions))]
+        external_promoters: Optional[Dict[int, List[BedRecord]]] = None
+        external_distal: Optional[Dict[int, List[BedRecord]]] = None
+        if use_external:
+            # One wide window covers both promoter and enhancer cutoffs.  The
+            # returned candidates are split below, avoiding a second external
+            # process for peaks without promoter matches.
+            promoter_window = max(_fixed_cutoff(upstream_cutoff), _fixed_cutoff(downstream_cutoff))
+            query_window = max(promoter_window, _fixed_cutoff(enhancer_cutoff))
+            external_candidates = external_window_records(batch, tss_records, query_window, backend)
+            external_promoters = {}
+            for local_index, region in enumerate(batch):
+                # Keep the complete wide-window candidate list here.  The
+                # strand-aware promoter classifier below is the authority for
+                # promoter distance; a generic distance prefilter can differ
+                # at interval boundaries.
+                external_promoters[local_index] = external_candidates.get(local_index, [])
+                external_distal = external_distal or {}
+                external_distal[local_index] = [
+                    record
+                    for record in external_candidates.get(local_index, [])
+                    if distance_bp(region.start, region.end, record.start, record.end)
+                    <= _fixed_cutoff(enhancer_cutoff)
+                ]
+        for local_index, region in enumerate(batch):
+            promoter_candidates = external_promoters.get(local_index, []) if external_promoters is not None else None
+            promoter_records_for_region = (
+                _promoter_from_candidates(promoter_candidates, region, upstream_cutoff, downstream_cutoff)
+                if promoter_candidates is not None
+                else promoter_records(index, region, upstream_cutoff, downstream_cutoff)
+            )
+            # Match voom2anno.sh: distal/enhancer genes are reported only for
+            # peaks without a promoter assignment.  This keeps the two columns
+            # mutually exclusive and avoids substantially larger output tables.
+            distal = [] if promoter_records_for_region else (
+                _nearby_from_candidates(external_distal.get(local_index, []), region, enhancer_cutoff)
+                if external_distal is not None
+                else nearby_records(index, region, enhancer_cutoff)
+            )
+            promoter_names, promoter_ids = names_and_ids(promoter_records_for_region)
+            distal_names, distal_ids = names_and_ids(record for record, _ in distal)
+            closest, distance = closest_record(index, region)
+            rows.append((
+                region.chrom,
+                region.start,
+                region.end,
+                output_region_values(region, region.values, output_format) + [
+                    promoter_names,
+                    promoter_ids,
+                    distal_names,
+                    distal_ids,
+                    closest.name if closest else ".",
+                    closest.gene_id if closest else ".",
+                    distance if distance is not None else ".",
+                ],
+            ))
     rows.sort(key=lambda row: (row[0], row[1], row[2]))
     write_table(config.output_path, out_header, (row[3] for row in rows), include_header=output_format == "txt")
     return config.output_path

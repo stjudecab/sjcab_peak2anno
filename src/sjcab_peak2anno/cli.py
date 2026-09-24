@@ -31,7 +31,7 @@ from .db import available_versions, db_root, gene_annotation_path
 from .peak2gene import PeakGeneConfig, annotate_peak2gene, resolve_tss_path
 from .loops import annotate_loop
 from .intervals import detect_output_format, read_regions, write_table
-from .runtime import BACKENDS, detect_tools, resolve_backend, warn_if_slow
+from .runtime import detect_tools, resolve_backend, warn_if_slow
 
 
 DB_PACKAGE = "sjcab_peak2anno_db==0.1.8"
@@ -71,15 +71,8 @@ def add_input_args(parser: argparse.ArgumentParser, help_text: str, txt_delimite
     """Add positional and short-option input forms."""
     parser.add_argument("input", nargs="?", type=Path, help=help_text)
     parser.add_argument("-i", "--input", dest="input_option", type=Path, metavar="INPUT", help="Input file.")
+    parser.add_argument("-n", "--workers", type=int, default=1, help="Worker processes; loop anchors and combined steps can run in parallel.")
     parser.set_defaults(txt_delimiter=txt_delimiter)
-
-
-def add_backend_arg(parser: argparse.ArgumentParser, settings: Settings) -> None:
-    """Add the interval backend selector shared by annotation commands."""
-    parser.add_argument(
-        "-b", "--backend", choices=BACKENDS, default=settings.backend,
-        help="Interval backend. auto prefers bedtools, then pybedtools, then Python.",
-    )
 
 
 def add_db_install_args(parser: argparse.ArgumentParser) -> None:
@@ -154,7 +147,6 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_input_args(peak2gene, "Input BED/TSV or region-text file.", settings.txt_delimiter)
-    add_backend_arg(peak2gene, settings)
     add_db_install_args(peak2gene)
     peak2gene.add_argument("-o", "--output", type=Path, help="Output TSV path; defaults to stdout.")
     peak2gene.add_argument("-s", "--species", default=settings.default_species, help="Species key, for example hg38 or mm10.")
@@ -193,7 +185,6 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     )
     add_common_feature_args(narrow, settings)
     add_db_install_args(narrow)
-    add_backend_arg(narrow, settings)
     narrow.add_argument("--column-name", default="FeatureAssignment", help="Output annotation column name.")
     add_output_mode_arg(narrow, settings.feature_out, "Output max assignment, ordered percentages, or both.")
 
@@ -204,7 +195,6 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     )
     add_common_feature_args(broad, settings)
     add_db_install_args(broad)
-    add_backend_arg(broad, settings)
     add_output_mode_arg(broad, settings.feature_out, "Output max assignment, ordered percentages, or both.")
 
     state = subparsers.add_parser(
@@ -213,7 +203,6 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_input_args(state, "Input BED/TSV or region-text file.", settings.txt_delimiter)
-    add_backend_arg(state, settings)
     add_db_install_args(state)
     state.add_argument("-s", "-S", "--states", type=Path, required=True, help="Chromatin state dense/segments BED.")
     state.add_argument("-o", "--output", type=Path, help="Output TSV path; defaults to stdout.")
@@ -237,7 +226,6 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     ):
         loop = subparsers.add_parser(name, help=help_text, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         add_input_args(loop, "BEDPE input.", settings.txt_delimiter)
-        add_backend_arg(loop, settings)
         add_db_install_args(loop)
         loop.add_argument("-o", "--output", type=Path, help="Output path; defaults to stdout.")
         loop.add_argument("-H", "--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
@@ -262,7 +250,6 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     combined = subparsers.add_parser("combined", help="Run multiple annotations and merge their columns.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     combined.add_argument("--commands", action="append", choices=["peak2gene", "narrow2feature", "broad2feature", "peak2state"], required=True, help="Annotation step; repeat for multiple steps.")
     add_input_args(combined, "Input BED/TSV or region-text file.", settings.txt_delimiter)
-    add_backend_arg(combined, settings)
     add_db_install_args(combined)
     combined.add_argument("-o", "--output", type=Path, help="Output path; defaults to stdout.")
     combined.add_argument("-s", "--species", default=settings.default_species, help="Species key.")
@@ -286,7 +273,6 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     combined.add_argument("-C", "--columns")
     combined.add_argument("-R", "--region-column", type=int, default=0)
     combined.add_argument("-f", "--output-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows input format.")
-    combined.add_argument("--workers", type=int, default=1, help="Processes for independent annotations.")
     combined.add_argument("--feature-output-mode", choices=["max", "percent", "max,percent", "percent,max"], default=settings.feature_out, help="Output mode for feature steps.")
     combined.add_argument("--state-output-mode", choices=["max", "percent", "max,percent", "percent,max"], default=settings.state_out, help="Output mode for state steps.")
     state.add_argument("-m", "--summary", type=Path, help="Summary TSV path.")
@@ -423,6 +409,7 @@ def run(args: argparse.Namespace) -> Optional[Path]:
             state2name=args.state2name,
             backend=args.backend,
             order_lst=args.order_lst,
+            workers=args.workers,
         )
     if args.command == "combined":
         return run_combined(args)
@@ -741,6 +728,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser(settings)
     normalized = normalize_argv(argv)
     args = parser.parse_args(normalized)
+    args.backend = settings.backend
     apply_settings(args, normalized or [], settings)
     if hasattr(args, "backend"):
         tool_status = detect_tools()

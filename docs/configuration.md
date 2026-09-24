@@ -40,12 +40,15 @@ cutoff overrides use case-sensitive names such as
 | `SJCAB_PEAK2ANNO_2FEATURE_OUT` | `max` | Feature output mode |
 | `SJCAB_PEAK2ANNO_2STATE_OUT` | `max,percent` | State output mode |
 | `SJCAB_PEAK2ANNO_TXT_DELIMITER` | `auto` | Delimiter inside text regions such as `chr1:100-200` |
-| `SJCAB_PEAK2ANNO_BACKEND` | `auto` | Interval backend: `bedtools`, `pybedtools`, or `python` |
+| `SJCAB_PEAK2ANNO_BACKEND` | `auto` | Interval backend: `auto`, `bedtools`, or `python` |
 
-The backend can also be selected per command with `-b/--backend`. `auto` uses
-the native `bedtools` executable when it is on `PATH`, then `pybedtools` when
-available, and otherwise the indexed Python fallback. The `pybedtools`
-backend requires both the Python package and a `bedtools` executable.
+The backend is selected through the RC file or environment; there is no CLI
+backend option. `auto` always uses the indexed Python implementation. Set
+`SJCAB_PEAK2ANNO_BACKEND=bedtools` to use native bedtools; it must be on
+`PATH`, and generated commands are appended to `bedtools-peak2anno.sh` for
+review. The script supports mode `1` (one wide window) and mode `2`
+(promoter-first, enhancer-second); benchmark before choosing the external
+backend for production runs.
 
 Output modes are `max`, `percent`, `max,percent`, or `percent,max`.
 

@@ -21,14 +21,17 @@ Read the full documentation at
 
 ## Install
 
-Pip version does not require `bedtools` or `pybedtools`; both are detected when
-available. Without them, a slower Python interval fallback is used.
+Pip version does not require `bedtools`; `auto` uses the Python interval
+backend. To use native bedtools and create a reviewable script, set
+`SJCAB_PEAK2ANNO_BACKEND=bedtools` with bedtools available in `PATH`.
+The generated `bedtools-peak2anno.sh` supports mode `1` (one wide window) and
+mode `2` (promoter-first, enhancer-second).
 
 ```bash
 pip install sjcab_peak2anno
 ```
 
-The conda package requires require `bedtools` or `pybedtools` for faster
+The conda package does not require external interval tools.
 
 ```bash
 conda install stjudecab::sjcab_peak2anno

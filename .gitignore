@@ -43,6 +43,7 @@ build/
 .pixi/
 .pixi-cache/
 .mamba-root/
+.micromamba-pybedtools/
 .hf_home/
 .ruff_cache/
 .pytest_cache/
