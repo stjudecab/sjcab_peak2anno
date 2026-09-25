@@ -19,3 +19,5 @@
 - Normalized text output regions to `chr:start-end`, corrected strand-aware
   TSS and BED half-open distances, and removed gene-type options from
   feature-only commands.
+- Fixed feature/state BED loading so feature-only commands do not apply the
+  gene-type filter.

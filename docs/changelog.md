@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 / 2026-09-24
 
 - Updated automatic database installation to use the current
   `install-genebed` and `install-feature` subcommands.
@@ -14,6 +14,7 @@
 - Corrected minus-strand TSS conversion to use the BED end coordinate, so
   strand-aware closest-gene distances match the GENCODE/voom convention.
 - Removed the gene-type option from feature-only commands.
+- Fixed feature/state BED loading to bypass gene-type filtering entirely.
 - Enabled automatic installation of missing implicit database references by
   default; use `--no-auto-install-db` to opt out.
 - Changed the default `SJCAB_PEAK2ANNO_GENE_TYPE` and all related API/CLI

@@ -241,7 +241,7 @@ def feature_indexes(specs: Sequence[FeatureSpec]) -> OrderedDict[str, IntervalIn
     for spec in specs:
         if not spec.path.is_file():
             raise FileNotFoundError(f"Missing feature BED for {spec.label}: {spec.path}")
-        indexes[spec.label] = IntervalIndex(read_bed_records(spec.path))
+        indexes[spec.label] = IntervalIndex(read_bed_records(spec.path, gene_type="all"))
     return indexes
 
 
@@ -515,7 +515,7 @@ def read_state_names(path: Optional[Path]) -> Dict[str, str]:
 def load_state_index(states_path: Path, state_names: Mapping[str, str]) -> OrderedDict[str, IntervalIndex]:
     """Load a chromatin-state BED into one interval index per state label."""
     grouped: OrderedDict[str, List[BedRecord]] = OrderedDict()
-    for record in read_bed_records(states_path):
+    for record in read_bed_records(states_path, gene_type="all"):
         state_id = record.name
         label = state_names.get(state_id, state_id)
         grouped.setdefault(label, []).append(record)

@@ -624,17 +624,17 @@ def read_bed_records(
                     continue
                 if fields[8] not in wanted_types:
                     continue
-                start = int(fields[1])
-                end = int(fields[2])
-                if as_tss and end > start + 1:
-                    strand = fields[5] if len(fields) > 5 else "."
-                    if strand == "-":
-                        # Keep the historical voom/GENCODE TSS coordinate:
-                        # plus-strand TSS is the BED start, minus-strand TSS
-                        # is the BED end.  This makes the strand-aware TSS
-                        # point consistent with the reported distance column.
-                        start = end
-                    end = start + 1
+            start = int(fields[1])
+            end = int(fields[2])
+            if as_tss and end > start + 1:
+                strand = fields[5] if len(fields) > 5 else "."
+                if strand == "-":
+                    # Keep the historical voom/GENCODE TSS coordinate:
+                    # plus-strand TSS is the BED start, minus-strand TSS
+                    # is the BED end.  This makes the strand-aware TSS
+                    # point consistent with the reported distance column.
+                    start = end
+                end = start + 1
             if end < start:
                 raise ValueError(f"End before start at {path}:{line_number}")
             tfields = tuple([fields[0], str(start), str(end)] + fields[3:])
