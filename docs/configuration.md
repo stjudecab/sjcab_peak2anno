@@ -25,12 +25,17 @@ path and writes supported settings as commented examples.
 #SJCAB_PEAK2ANNO_TXT_DELIMITER=auto                      # Delimiter inside text regions such as ":-" for chr1:100-200
 #SJCAB_PEAK2ANNO_BACKEND=auto                            # default python: python|auto|bedtools
 #SJCAB_PEAK2ANNO_AUTO_INSTALL_DB=true                    # Automatically install missing DB files
+#SJCAB_PEAK2ANNO_WRITE_README=false                      # Write README.sjcab_peak2anno.txt after annotation
 #SJCAB_PEAK2ANNO_PROM_ENHA_CUTOFFS_<species>_<version>=2kb,50kb,2kb
 ```
 
 Environment variables with the same names override RC values. Species/version
 cutoff overrides use case-sensitive names such as
 `SJCAB_PEAK2ANNO_PROM_ENHA_CUTOFFS_hg38_v31`.
+
+Set `SJCAB_PEAK2ANNO_WRITE_README=true` in the RC file or environment to
+generate `README.sjcab_peak2anno.txt` after an annotation. An environment value
+overrides the RC value. An existing README is left unchanged.
 
 The backend is selected through the RC file or environment; there is no CLI
 backend option. `auto` always uses the indexed Python implementation. Set

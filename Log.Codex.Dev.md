@@ -1,5 +1,17 @@
 # Development Log
 
+## 2026-09-25
+
+- Added comma-separated and `.lst`/`.list` multi-input support with parallel
+  processing through `--workers`.
+- Changed multi-input outputs to use per-input `.anno` or `-o` suffix files;
+  `stdout` and `/dev/stdout` merge results with one text header.
+- Changed headerless BED text output to assume BED3 and name extra columns
+  `field4`, `field5`, and so on.
+- Corrected `list-db` to hide compatibility `def` folders and select concrete
+  installed versions.
+- Added RC support for `SJCAB_PEAK2ANNO_WRITE_README`.
+
 ## 2026-09-24
 
 - Standardized the package/import name as `sjcab_peak2anno` and retained the

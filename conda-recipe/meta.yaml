@@ -22,7 +22,7 @@ requirements:
     - python >=3.7
     - pip
     - setuptools >=61
-    - setuptools-scm >=8
+    - versioningit
     - wheel
   run:
     - python >=3.7
@@ -42,7 +42,6 @@ about:
   doc_url: https://sjcab-peak2anno.readthedocs.io/
   dev_url: https://github.com/stjudecab/sjcab_peak2anno
   issue_url: https://github.com/stjudecab/sjcab_peak2anno/issues
-  license: Apache-2.0
   summary: Annotate genomic peaks to genes, genomic features, and chromatin states.
   description: |
     peak2anno provides the peak2gene, narrow2feature, broad2feature,

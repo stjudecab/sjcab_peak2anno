@@ -22,6 +22,24 @@ chr2^300=450
 format with `bed`, `txt`, or `txtnohead`; use `--region-column` for another
 text column.
 
+Multiple input files are accepted as a comma-separated value or as one path
+per line in a file ending in `.lst` or `.list`. Blank lines and lines starting
+with `#` in list files are ignored. With `-o stdout` or `-o /dev/stdout`,
+results are concatenated in the listed order; use `--workers` to annotate
+independent files in parallel. If `-o` is omitted, each input gets an `.anno`
+result; otherwise `-o` is treated as a suffix for each input:
+
+```bash
+peak2anno peak2gene -i sample1.bed,sample2.txt -s hg38 -n 2 -o XXX
+# writes sample1.bed.XXX and sample2.txt.XXX
+peak2anno peak2gene -i samples.list -s hg38 --workers 4 -o stdout
+```
+
+For merged `txt` output, only the first input header is written. With
+`bed`/`bedpe` or `txtnohead`, no header is added. Headerless BED input assumes
+only BED3; extra columns are named `field4`, `field5`, `field6`, and so on when
+written as text.
+
 For text input, the region coordinate delimiter can be selected with the
 `SJCAB_PEAK2ANNO_TXT_DELIMITER` environment variable or the same setting in
 the RC file. The default is `auto`, which recognizes the delimiters shown

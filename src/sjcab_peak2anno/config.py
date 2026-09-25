@@ -18,6 +18,7 @@ DEFAULT_2STATE_OUT = "max,percent"
 DEFAULT_TXT_DELIMITER = "auto"
 DEFAULT_BACKEND = "python"
 DEFAULT_AUTO_INSTALL_DB = True
+DEFAULT_WRITE_README = False
 
 RC_DEFAULTS = {
     "SJCAB_PEAK2ANNO_DB_PATH": "~/.sjcab_peak2anno_db",
@@ -30,6 +31,7 @@ RC_DEFAULTS = {
     "SJCAB_PEAK2ANNO_TXT_DELIMITER": DEFAULT_TXT_DELIMITER,
     "SJCAB_PEAK2ANNO_BACKEND": DEFAULT_BACKEND,
     "SJCAB_PEAK2ANNO_AUTO_INSTALL_DB": str(DEFAULT_AUTO_INSTALL_DB).lower(),
+    "SJCAB_PEAK2ANNO_WRITE_README": str(DEFAULT_WRITE_README).lower(),
 }
 
 
@@ -48,6 +50,7 @@ class Settings:
     txt_delimiter: str
     backend: str
     auto_install_db: bool
+    write_readme: bool
 
     @property
     def default_species(self) -> str:
@@ -164,6 +167,7 @@ def load_settings() -> Settings:
         "SJCAB_PEAK2ANNO_TXT_DELIMITER": DEFAULT_TXT_DELIMITER,
         "SJCAB_PEAK2ANNO_BACKEND": DEFAULT_BACKEND,
         "SJCAB_PEAK2ANNO_AUTO_INSTALL_DB": str(DEFAULT_AUTO_INSTALL_DB).lower(),
+        "SJCAB_PEAK2ANNO_WRITE_README": str(DEFAULT_WRITE_README).lower(),
     }
     candidates = rc_paths()
     rc_file = next((path for path in candidates if path.is_file()), candidates[0])
@@ -196,6 +200,12 @@ def load_settings() -> Settings:
         auto_install_db=_parse_bool(
             values["SJCAB_PEAK2ANNO_AUTO_INSTALL_DB"],
             "SJCAB_PEAK2ANNO_AUTO_INSTALL_DB",
+        ),
+        write_readme=(
+            _parse_bool(
+                values["SJCAB_PEAK2ANNO_WRITE_README"],
+                "SJCAB_PEAK2ANNO_WRITE_README",
+            )
         ),
     )
     if settings.iso_set not in {"all", "deduplong"}:

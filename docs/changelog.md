@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Changed multi-input file output to write one result per input using an
+  `.anno` default or the `-o` suffix; `stdout` and `/dev/stdout` retain merged
+  output. Headerless BED text output now assumes BED3 and names extra columns
+  `field4`, `field5`, and so on.
+
+- Added comma-separated and `.lst`/`.list` multi-input support; independent
+  input files can be processed in parallel with `--workers`.
+
+- Updated `list-db` to hide compatibility `def` directories when a concrete
+  installed version is available and mark selected gene/feature entries as
+  default.
+
+- Added `--write-readme`/`--readme` to write command-specific methods and
+  output-column notes, and simplified `.run.log` to expanded command-only
+  entries.
+- Added `SJCAB_PEAK2ANNO_WRITE_README` to generated rc files; it can be set in
+  the RC file or environment, with the environment taking precedence. An
+  existing README is not changed.
+- Simplified `list-db` to list gene BED files and feature folders with columns
+  `species`, `version`, `annotation`, `default`, and `path`.
+- Replaced setuptools-scm with versioningit for automatic Git-based package
+  versioning in pip and conda builds.
 - Removed the `sjcab_peak2anno_db` version constraint from pip, conda, and
   automatic database installation.
 - Added `SJCAB_PEAK2ANNO_AUTO_INSTALL_DB` rc/environment configuration for

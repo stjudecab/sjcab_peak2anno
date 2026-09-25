@@ -38,23 +38,29 @@ Inspect the selected order list to confirm the meaning of each feature; a
 two-column list uses column 2 as the output feature name.
 
 All commands show resolved defaults with `-h` and accept positional input or
-`-i/--input`. Omit `-o/--output` to write the main table to stdout.
+`-i/--input`. Omit `-o/--output` to write a single-input table to stdout; for
+multiple inputs, omit it to create one `.anno` file per input.
 
 Common options include:
 
-- `-i/--input` (default: positional input; required): input BED, BEDPE, or text file.
-- `-o/--output` (default: stdout): output file.
+- `-i/--input` (default: positional input; required): input BED, BEDPE, or text file; multiple files may be comma-separated or supplied in a `.lst`/`.list` file.
+- `-o/--output` (default: stdout): for multiple inputs, use this as an output
+  suffix (`-o XXX` writes `input.bed.XXX`); `stdout` or `/dev/stdout` merges
+  all inputs to stdout. Without `-o`, multiple inputs write `input.bed.anno`.
 - `-f/--output-format` (default: auto): `auto`, `bed`, `bedpe`, `txt`, or `txtnohead`.
 - `-I/--input-format` (default: auto): `auto`, `bed`, `txt`, or `txtnohead`.
 - `-H/--header` (default: auto): `auto`, `yes`, or `no`.
 - `-C/--columns` (default: 0,1,2): zero-based BED coordinate columns.
 - `-R/--region-column` (default: 0): zero-based text-region column.
-- `-n/--workers` (default: 1): worker processes; loop anchors and combined steps can run in parallel.
+- `-n/--workers` (default: 1): worker processes for independent input files; loop anchors and combined steps can also run in parallel.
 - `-x/--overlap-cutoff` (default: 1bp): minimum overlap threshold.
 - `-m/--summary` (default: none): summary output path.
 - `-p/--plot` (default: false): write summary plots.
 - `-a/--auto-install-db` (default: true): automatically install missing database files.
 - `-A/--no-auto-install-db` (default: disabled): disable automatic database installation.
+- `--write-readme/--readme` (default: false): write simple methods and column
+  notes to `README.sjcab_peak2anno.txt` if it does not exist. The same behavior
+  can be enabled with environment variable `SJCAB_PEAK2ANNO_WRITE_README=true`.
 
 The default is also configurable with `SJCAB_PEAK2ANNO_AUTO_INSTALL_DB` in
 the rc file or environment (`true`/`false`). CLI flags override that setting.

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61", "setuptools-scm>=8", "wheel"]
+requires = ["setuptools>=61", "versioningit", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,9 @@ dynamic = ["version"]
 description = "Annotate genomic peaks to genes, genomic features, and chromatin states."
 readme = "README.md"
 requires-python = ">=3.7"
-license = {text = "Apache-2.0"}
+dependencies = [
+    "sjcab_peak2anno_db",
+]
 authors = [
   {name = "St. Jude CAB"}
 ]
@@ -17,7 +19,6 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: Apache Software License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.7",
   "Programming Language :: Python :: 3.8",
@@ -25,10 +26,10 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
-  "Topic :: Scientific/Engineering :: Bio-Informatics"
-]
-dependencies = [
-    "sjcab_peak2anno_db",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 
 [project.urls]
@@ -36,10 +37,6 @@ Homepage = "https://github.com/stjudecab/sjcab_peak2anno"
 Repository = "https://github.com/stjudecab/sjcab_peak2anno"
 Issues = "https://github.com/stjudecab/sjcab_peak2anno/issues"
 Doc = "https://sjcab-peak2anno.readthedocs.io"
-
-[project.optional-dependencies]
-plot = ["matplotlib>=3.5"]
-test = ["pytest>=7"]
 
 [project.scripts]
 peak2anno = "sjcab_peak2anno.cli:main"
@@ -49,8 +46,23 @@ sjcab_peak2anno = "sjcab_peak2anno.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools_scm]
-version_file = "src/sjcab_peak2anno/_version.py"
+[tool.versioningit]
+default-version = "0.0.0"
+
+[tool.versioningit.format]
+# Keep the latest tag when only uncommitted working-tree changes are present.
+distance = "{base_version}"
+dirty = "{base_version}"
+distance-dirty = "{base_version}"
+
+[tool.versioningit.write]
+file = "src/sjcab_peak2anno/_version.py"
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.5"]
+test = ["pytest>=7"]
+
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

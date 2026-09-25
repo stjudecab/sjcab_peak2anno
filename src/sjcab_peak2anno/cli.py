@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import csv
 from concurrent.futures import ProcessPoolExecutor
-from datetime import datetime
 from contextlib import contextmanager
 import fcntl
 import shlex
@@ -14,7 +13,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Union
 
 from . import __version__
 from .features import (
@@ -35,6 +34,7 @@ from .runtime import detect_tools, resolve_backend, warn_if_slow
 
 
 DB_PACKAGE = "sjcab_peak2anno_db"
+README_FILENAME = "README.sjcab_peak2anno.txt"
 
 
 def add_common_feature_args(parser: argparse.ArgumentParser, settings: Settings) -> None:
@@ -70,9 +70,104 @@ def add_common_feature_args(parser: argparse.ArgumentParser, settings: Settings)
 def add_input_args(parser: argparse.ArgumentParser, help_text: str, txt_delimiter: str = "auto") -> None:
     """Add positional and short-option input forms."""
     parser.add_argument("input", nargs="?", type=Path, help=help_text)
-    parser.add_argument("-i", "--input", dest="input_option", type=Path, metavar="INPUT", help="Input file.")
-    parser.add_argument("-n", "--workers", type=int, default=1, help="Worker processes; loop anchors and combined steps can run in parallel.")
+    parser.add_argument(
+        "-i", "--input", dest="input_option", type=Path, metavar="INPUT",
+        help="Input BED/TXT, comma-separated inputs, or a .lst/.list file.",
+    )
+    parser.add_argument("-n", "--workers", type=int, default=1, help="Workers for multiple input files; default: 1.")
     parser.set_defaults(txt_delimiter=txt_delimiter)
+
+
+def expand_input_paths(value: Union[Path, str]) -> List[Path]:
+    """Expand one input, comma-separated inputs, or a ``.lst/.list`` file."""
+    path = Path(value).expanduser()
+    if path.suffix.lower() in {".lst", ".list"}:
+        if not path.is_file():
+            raise FileNotFoundError(f"Input list file was not found: {path}")
+        values: List[str] = []
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            values.extend(item.strip() for item in line.split(",") if item.strip())
+        return [
+            (path.parent / item).expanduser() if not Path(item).expanduser().is_absolute() else Path(item).expanduser()
+            for item in values
+        ]
+    return [Path(item.strip()).expanduser() for item in str(value).split(",") if item.strip()]
+
+
+def _run_one_input(args: argparse.Namespace) -> Path:
+    """Run one input task for the multi-input process pool."""
+    run(args)
+    return args.output
+
+
+def run_multiple_inputs(args: argparse.Namespace, input_paths: Sequence[Path]) -> Optional[Path]:
+    """Annotate independent input files in parallel and concatenate results."""
+    to_stdout = (
+        bool(args.stdout_output)
+        if hasattr(args, "stdout_output")
+        else args.output is None
+    )
+    requested_format = args.output_format
+    shared_format = requested_format
+    if to_stdout and shared_format == "auto":
+        if args.command in {"loop2gene", "loop2feature", "loop2state"}:
+            first = next(
+                line for line in input_paths[0].read_text(encoding="utf-8").splitlines()
+                if line.strip() and not line.startswith(("#", "track", "browser"))
+            )
+            fields = first.split("\t")
+            loop_columns = parse_loop_columns(args.loop_columns)
+            shared_format = "bedpe" if args.header == "no" or (
+                args.header == "auto"
+                and all(fields[index].lstrip("-").isdigit() for index in (loop_columns[1], loop_columns[2], loop_columns[4], loop_columns[5]))
+            ) else "txt"
+        else:
+            shared_format = detect_output_format(
+                input_paths[0], args.header, args.input_format, parse_columns(args.columns),
+                args.region_column, args.txt_delimiter,
+            )
+    workers = max(1, int(args.workers))
+    with tempfile.TemporaryDirectory(prefix="sjcab-peak2anno-inputs-") as temp:
+        temp_root = Path(temp)
+        tasks = []
+        for index, input_path in enumerate(input_paths):
+            values = vars(args).copy()
+            if to_stdout:
+                output_path = temp_root / f"{index}.out"
+                task_format = shared_format
+            else:
+                suffix = "anno" if args.output is None else args.output.name
+                output_path = input_path.with_name(f"{input_path.name}.{suffix}")
+                task_format = requested_format
+            values.update(
+                input=input_path,
+                input_option=None,
+                output=output_path,
+                output_format=task_format,
+                summary=None,
+                plot=False,
+                write_readme=False,
+            )
+            tasks.append(argparse.Namespace(**values))
+        if workers > 1 and len(tasks) > 1:
+            with ProcessPoolExecutor(max_workers=min(workers, len(tasks))) as executor:
+                outputs = list(executor.map(_run_one_input, tasks))
+        else:
+            outputs = [_run_one_input(task) for task in tasks]
+        if not to_stdout:
+            return None
+        include_header = shared_format == "txt"
+        output_handle = sys.stdout
+        for index, output_path in enumerate(outputs):
+            with output_path.open(encoding="utf-8") as input_handle:
+                for line_number, line in enumerate(input_handle):
+                    if include_header and index > 0 and line_number == 0:
+                        continue
+                    output_handle.write(line)
+    return args.output
 
 
 def add_db_install_args(parser: argparse.ArgumentParser, settings: Settings) -> None:
@@ -90,6 +185,17 @@ def add_db_install_args(parser: argparse.ArgumentParser, settings: Settings) -> 
         dest="auto_install_db",
         action="store_false",
         help="Do not install missing database files; fail with the missing path.",
+    )
+
+
+def add_readme_arg(parser: argparse.ArgumentParser, settings: Settings) -> None:
+    """Add the optional methods/columns README writer."""
+    parser.add_argument(
+        "--write-readme", "--readme",
+        dest="write_readme",
+        action="store_true",
+        default=settings.write_readme,
+        help=f"Write this command's methods and columns to {README_FILENAME} if it does not exist.",
     )
 
 
@@ -148,6 +254,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     )
     add_input_args(peak2gene, "Input BED/TSV or region-text file.", settings.txt_delimiter)
     add_db_install_args(peak2gene, settings)
+    add_readme_arg(peak2gene, settings)
     peak2gene.add_argument("-o", "--output", type=Path, help="Output TSV path; defaults to stdout.")
     peak2gene.add_argument("-s", "--species", default=settings.default_species, help="Species key, for example hg38 or mm10.")
     peak2gene.add_argument(
@@ -185,6 +292,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     )
     add_common_feature_args(narrow, settings)
     add_db_install_args(narrow, settings)
+    add_readme_arg(narrow, settings)
     narrow.add_argument("--column-name", default="FeatureAssignment", help="Output annotation column name.")
     add_output_mode_arg(narrow, settings.feature_out, "Output max assignment, ordered percentages, or both.")
 
@@ -195,6 +303,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     )
     add_common_feature_args(broad, settings)
     add_db_install_args(broad, settings)
+    add_readme_arg(broad, settings)
     add_output_mode_arg(broad, settings.feature_out, "Output max assignment, ordered percentages, or both.")
 
     state = subparsers.add_parser(
@@ -204,6 +313,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     )
     add_input_args(state, "Input BED/TSV or region-text file.", settings.txt_delimiter)
     add_db_install_args(state, settings)
+    add_readme_arg(state, settings)
     state.add_argument("-s", "-S", "--states", type=Path, required=True, help="Chromatin state dense/segments BED.")
     state.add_argument("-o", "--output", type=Path, help="Output TSV path; defaults to stdout.")
     state.add_argument("-N", "--state2name", type=Path, help="Optional two-column state ID to label mapping.")
@@ -227,6 +337,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         loop = subparsers.add_parser(name, help=help_text, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         add_input_args(loop, "BEDPE input.", settings.txt_delimiter)
         add_db_install_args(loop, settings)
+        add_readme_arg(loop, settings)
         loop.add_argument("-o", "--output", type=Path, help="Output path; defaults to stdout.")
         loop.add_argument("-H", "--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
         loop.add_argument("-C", "--loop-columns", default="0,1,2,3,4,5", help="BEDPE coordinate columns.")
@@ -252,6 +363,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     combined.add_argument("--commands", action="append", choices=["peak2gene", "narrow2feature", "broad2feature", "peak2state"], required=True, help="Annotation step; repeat for multiple steps.")
     add_input_args(combined, "Input BED/TSV or region-text file.", settings.txt_delimiter)
     add_db_install_args(combined, settings)
+    add_readme_arg(combined, settings)
     combined.add_argument("-o", "--output", type=Path, help="Output path; defaults to stdout.")
     combined.add_argument("-s", "--species", default=settings.default_species, help="Species key.")
     combined.add_argument("-d", "--db-path", default=settings.db_path, help="Database root.")
@@ -417,12 +529,12 @@ def run(args: argparse.Namespace) -> Optional[Path]:
     if args.command == "list-db":
         rows = available_versions(args.db_path)
         table = [
-            ["species", "annotation", "version", "default", "path"],
+            ["species", "version", "annotation", "default", "path"],
             *[
                 [
                     str(row.get("species", ".")),
-                    str(row.get("annotation", ".")),
                     str(row.get("version", ".")),
+                    str(row.get("annotation", ".")),
                     str(row.get("default", ".")).lower(),
                     str(row.get("path", ".")),
                 ]
@@ -472,17 +584,25 @@ def run_combined(args: argparse.Namespace) -> Optional[Path]:
         else:
             tables = [run_combined_step(step_args_item) for step_args_item in step_args]
         output_header = list(input_header)
+        annotation_input_width = len(output_region_header_for_combined(input_header))
         for header, _rows in tables:
-            output_header.extend(header[len(input_header):])
+            output_header.extend(header[annotation_input_width:])
         output_rows = []
         for row_index in range(len(tables[0][1])):
             row = list(tables[0][1][row_index])
             for _header, rows in tables[1:]:
-                row.extend(rows[row_index][len(input_header):])
+                row.extend(rows[row_index][annotation_input_width:])
             output_rows.append(row)
         output_format = args.output_format if args.output_format != "auto" else detect_output_format(args.input, args.header, args.input_format, parse_columns(args.columns), args.region_column, args.txt_delimiter)
         write_table(args.output, output_header, output_rows, include_header=output_format == "txt")
     return args.output
+
+
+def output_region_header_for_combined(header: Sequence[str]) -> List[str]:
+    """Return the input columns as represented by single-step TXT output."""
+    if len(header) >= 3 and header[1].lower() in {"start", "chromstart"} and header[2].lower() in {"end", "chromend"}:
+        return ["Region"] + list(header[3:])
+    return list(header)
 
 
 def run_combined_step(args: argparse.Namespace) -> tuple[list[str], list[list[str]]]:
@@ -568,25 +688,116 @@ def resolved_references(args: argparse.Namespace) -> list[str]:
     return references
 
 
+def _log_path_values(args: argparse.Namespace) -> List[str]:
+    """Return explicit input/reference path values that should be expanded."""
+    values: List[str] = []
+    input_paths = getattr(args, "input_paths", None)
+    if input_paths:
+        values.extend(str(path) for path in input_paths)
+    for name in (
+        "input", "input_option", "db_path", "gene_bed", "tss_bed", "feature_dir",
+        "states", "state2name", "order_lst", "summary",
+    ):
+        value = getattr(args, name, None)
+        if value is not None and str(value) not in {"", "def", "default", "none", "utr", "auto"}:
+            values.append(str(value))
+    for name in ("features", "feature_labels"):
+        value = getattr(args, name, None)
+        if value:
+            values.extend(item.strip() for item in str(value).split(",") if item.strip())
+    return values
+
+
+def _expanded_command(args: argparse.Namespace, command_args: Optional[Sequence[str]] = None) -> str:
+    """Format the command with explicit input/reference paths resolved."""
+    actual_args = list(sys.argv[1:] if command_args is None else command_args)
+    replacements = {}
+    input_paths = getattr(args, "input_paths", None)
+    if input_paths:
+        expanded_inputs = ",".join(str(Path(path).expanduser().resolve()) for path in input_paths)
+        replacements[str(getattr(args, "input", ""))] = expanded_inputs
+        if getattr(args, "input_option", None) is not None:
+            replacements[str(args.input_option)] = expanded_inputs
+    for value in _log_path_values(args):
+        path = Path(value).expanduser()
+        if path.exists() or value == str(getattr(args, "db_path", "")):
+            replacements[value] = str(path.resolve())
+    if input_paths:
+        replacements[str(getattr(args, "input", ""))] = expanded_inputs
+        if getattr(args, "input_option", None) is not None:
+            replacements[str(args.input_option)] = expanded_inputs
+    expanded: List[str] = []
+    for value in actual_args:
+        if "=" in value and value.split("=", 1)[0].startswith("-"):
+            option, raw = value.split("=", 1)
+            value = f"{option}={replacements.get(raw, raw)}"
+        else:
+            value = replacements.get(value, value)
+        expanded.append(value)
+    return " ".join(shlex.quote(value) for value in [sys.argv[0], *expanded])
+
+
 def record_run(args: argparse.Namespace, command_args: Optional[Sequence[str]] = None) -> None:
-    """Append the command line and resolved reference files to ``.run.log``."""
-    actual_args = sys.argv[1:] if command_args is None else command_args
-    command = " ".join(shlex.quote(value) for value in [sys.argv[0], *actual_args])
-    references = []
-    try:
-        references = resolved_references(args)
-    except Exception as exc:  # noqa: BLE001
-        references.append(f"resolution error: {exc}")
-    output = getattr(args, "output", None)
+    """Append one command-only entry to ``.run.log``."""
     with Path(".run.log").open("a", encoding="utf-8") as handle:
-        handle.write(f"[{datetime.now().isoformat(timespec='seconds')}]\n")
-        handle.write(f"command: {command}\n")
-        if hasattr(args, "backend"):
-            handle.write(f"backend: {args.backend}\n")
-        handle.write(f"output: {output.expanduser().resolve() if output else 'stdout'}\n")
-        for reference in references:
-            handle.write(f"reference: {reference}\n")
-        handle.write("\n")
+        handle.write(f"command: {_expanded_command(args, command_args)}\n")
+
+
+README_SECTIONS = {
+    "peak2gene": (
+        "Method: convert gene intervals to strand-aware TSS points, assign promoter genes first, "
+        "then assign enhancer-range genes only when no promoter is assigned; also report the closest gene.\n"
+        "Columns: Region, promoter genes and IDs, enhancer-range genes and IDs, closest gene, gene ID, distance."
+    ),
+    "narrow2feature": (
+        "Method: assign each input region to the first overlapping feature in the selected order list.\n"
+        "Columns: Region, FeatureAssignment (and optional percentage columns)."
+    ),
+    "broad2feature": (
+        "Method: calculate overlap with each feature, assigning each base to the narrowest feature first.\n"
+        "Columns: Region, feature overlap percentages (and optional max assignment)."
+    ),
+    "peak2state": (
+        "Method: calculate overlap between each input region and chromatin-state intervals.\n"
+        "Columns: Region, state overlap percentages (and optional max state)."
+    ),
+    "loop2gene": (
+        "Method: annotate the two BEDPE anchors independently using the peak2gene method.\n"
+        "Columns: original BEDPE columns followed by anchor1_ and anchor2_ gene columns."
+    ),
+    "loop2feature": (
+        "Method: annotate the two BEDPE anchors independently using the selected feature method.\n"
+        "Columns: original BEDPE columns followed by anchor1_ and anchor2_ feature columns."
+    ),
+    "loop2state": (
+        "Method: annotate the two BEDPE anchors independently using chromatin-state overlap.\n"
+        "Columns: original BEDPE columns followed by anchor1_ and anchor2_ state columns."
+    ),
+}
+
+
+def write_command_readme(args: argparse.Namespace) -> Path:
+    """Append method/column notes for the selected command(s) once."""
+    commands = args.commands if args.command == "combined" else [args.command]
+    path = Path(README_FILENAME)
+    if path.is_file():
+        return path
+    existing = ""
+    additions: List[str] = []
+    for command in commands:
+        if command not in README_SECTIONS:
+            continue
+        marker = f"## {command}"
+        if marker in existing:
+            continue
+        additions.append(f"{marker}\n{README_SECTIONS[command]}\n")
+    if additions:
+        if not existing:
+            existing = "# sjcab_peak2anno methods and output columns\n\n"
+        elif not existing.endswith("\n"):
+            existing += "\n"
+        path.write_text(existing + "\n".join(additions) + "\n", encoding="utf-8")
+    return path
 
 
 def database_install_command(args: argparse.Namespace) -> Optional[list[str]]:
@@ -752,20 +963,39 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             parser.error("provide input either positionally or with -i/--input, not both")
         if args.input is None:
             parser.error("an input file is required; provide it positionally or with -i/--input")
+    if args.command != "list-db":
+        input_paths = expand_input_paths(args.input)
+        if not input_paths:
+            parser.error("input list did not contain any files")
+        missing = [path for path in input_paths if not path.is_file()]
+        if missing:
+            parser.error("input file(s) were not found: " + ", ".join(str(path) for path in missing))
+        args.input_paths = input_paths
+        if len(input_paths) == 1:
+            args.input = input_paths[0]
+        args.stdout_output = str(args.output) in {"stdout", "/dev/stdout"}
+        if args.stdout_output:
+            args.output = None
+    else:
+        input_paths = []
     record_run(args, normalized)
+    succeeded = False
     try:
-        run(args)
+        run_multiple_inputs(args, input_paths) if len(input_paths) > 1 else run(args)
+        succeeded = True
     except FileNotFoundError as exc:
         if offer_database_install(args, exc):
-            record_run(args, normalized)
             try:
-                run(args)
+                run_multiple_inputs(args, input_paths) if len(input_paths) > 1 else run(args)
+                succeeded = True
             except Exception as retry_exc:  # noqa: BLE001
                 parser.exit(1, f"peak2anno: error after database installation: {retry_exc}\n")
         else:
             parser.exit(1, f"peak2anno: error: {exc}\n")
     except Exception as exc:  # noqa: BLE001
         parser.exit(1, f"peak2anno: error: {exc}\n")
+    if succeeded and getattr(args, "write_readme", False):
+        write_command_readme(args)
     return 0
 
 

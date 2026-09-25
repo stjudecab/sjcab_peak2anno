@@ -507,7 +507,9 @@ def read_regions(
         data_rows = rows[1:]
     else:
         width = max(len(row) for row in rows)
-        default_names = ["chr", "start", "end", "name", "score", "strand"]
+        # Do not assume BED6 metadata for headerless BED.  BED3 is the only
+        # required shape; any additional columns receive generic names.
+        default_names = ["chr", "start", "end"]
         if input_format in {"txt", "txtnohead"}:
             default_names = ["Region"]
         out_header = default_names[: min(width, len(default_names))]

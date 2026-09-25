@@ -37,6 +37,13 @@ The conda package does not require external interval tools.
 conda install stjudecab::sjcab_peak2anno
 ```
 
+## Quick start
+```bash
+# it would automatic sjcab_peak2anno_db install hg38 v31 and annotate peaks.bed
+wget https://github.com/stjudecab/sjcab_peak2anno/raw/refs/heads/master/tests_data/peaks.bed
+peak2anno peak2gene peaks.bed
+```
+
 ## Command examples
 
 Annotate a BED peak to nearby genes. Omitting `-o` writes the table to stdout:

@@ -19,7 +19,7 @@ from sjcab_peak2anno.features import (
     annotate_peak_state,
     resolve_features,
 )
-from sjcab_peak2anno.cli import build_parser, main
+from sjcab_peak2anno.cli import build_parser, expand_input_paths, main
 from sjcab_peak2anno.config import load_settings
 from sjcab_peak2anno.db import available_versions
 from sjcab_peak2anno.intervals import InputRegion, output_region_header, output_region_values, read_regions
@@ -32,6 +32,23 @@ def write(path: Path, text: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     return path
+
+
+def test_multiple_input_expansion_supports_csv_and_list_files(tmp_path: Path) -> None:
+    """Input accepts comma-separated paths and relative paths in .lst files."""
+    first = write(tmp_path / "one.bed", "chr1\t1\t2\n")
+    second = write(tmp_path / "two.txt", "chr1:3-4\n")
+    assert expand_input_paths(f"{first},{second}") == [first, second]
+    listing = write(tmp_path / "inputs.list", "# inputs\none.bed,\ntwo.txt\n")
+    assert expand_input_paths(listing) == [first, second]
+
+
+def test_headerless_bed_text_output_assumes_bed3(tmp_path: Path) -> None:
+    """Extra headerless BED columns receive generic field names after BED3."""
+    path = write(tmp_path / "extra.bed", "chr1\t1\t2\ta\tb\tc\td\n")
+    header, _regions = read_regions(path, input_format="bed")
+    assert header == ["chr", "start", "end", "field4", "field5", "field6", "field7"]
+    assert output_region_header(header, "txt") == ["Region", "field4", "field5", "field6", "field7"]
 
 
 def read_tsv(path: Path) -> list[list[str]]:
@@ -73,6 +90,22 @@ def test_auto_install_db_can_be_configured_by_rc_and_environment(
     assert load_settings().auto_install_db is True
 
 
+def test_write_readme_can_be_configured_by_rc_and_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """README generation is documented in the RC template and env wins."""
+    rc = tmp_path / "settings.rc"
+    monkeypatch.setenv("SJCAB_PEAK2ANNO_CONFIG", str(rc))
+    monkeypatch.delenv("SJCAB_PEAK2ANNO_WRITE_README", raising=False)
+    assert load_settings().write_readme is False
+    assert "#SJCAB_PEAK2ANNO_WRITE_README=false" in rc.read_text()
+    write(rc, "SJCAB_PEAK2ANNO_WRITE_README=true\n")
+    assert load_settings().write_readme is True
+    monkeypatch.setenv("SJCAB_PEAK2ANNO_WRITE_README", "false")
+    settings = load_settings()
+    assert settings.write_readme is False
+
+
 def test_feature_commands_do_not_accept_gene_type() -> None:
     """Gene-type filtering belongs only to gene annotation commands."""
     parser = build_parser()
@@ -85,28 +118,37 @@ def test_feature_commands_do_not_accept_gene_type() -> None:
 
 def test_list_db_reports_installed_current_layout(tmp_path: Path) -> None:
     """list-db should report files that are actually installed on disk."""
-    write(tmp_path / "mm10" / "vM22" / "all.gene.bed", "chr1\t0\t1\n")
-    write(tmp_path / "mm10" / "vM22" / "2kb.exon.bed", "chr1\t0\t1\n")
-    write(tmp_path / "hg38" / "v31" / "all.gene.bed", "chr1\t0\t1\n")
+    write(tmp_path / "genebed" / "mm10" / "vM22" / "all.gene.bed", "chr1\t0\t1\n")
+    write(tmp_path / "feature" / "mm10" / "vM22" / "2kb" / "2kb.exon.bed", "chr1\t0\t1\n")
+    write(tmp_path / "genebed" / "hg38" / "v31" / "all.gene.bed", "chr1\t0\t1\n")
     rows = available_versions(str(tmp_path))
     paths = {row["path"] for row in rows}
-    assert "mm10/vM22/all.gene.bed" in paths
-    assert "mm10/vM22/2kb.exon.bed" in paths
-    assert "hg38/v31/all.gene.bed" in paths
+    assert "genebed/mm10/vM22/all.gene.bed" in paths
+    assert "feature/mm10/vM22/2kb" in paths
+    assert "genebed/hg38/v31/all.gene.bed" in paths
 
 
 def test_list_db_reports_genebed_species_and_default(tmp_path: Path) -> None:
-    """list-db should derive species from DB_PATH/genebed and mark its version default."""
+    """list-db should hide compatibility def folders and select the named version."""
+    write(tmp_path / "genebed" / "mm10" / "def" / "all.gene.bed", "chr1\t0\t1\n")
     write(tmp_path / "genebed" / "mm10" / "vM22" / "all.gene.bed", "chr1\t0\t1\n")
+    write(tmp_path / "feature" / "mm10" / "vM22" / "2kb" / "2kb.exon.bed", "chr1\t0\t1\n")
     rows = available_versions(str(tmp_path))
     assert rows == [
         {
             "species": "mm10",
-            "annotation": "all.gene",
+            "annotation": "all",
             "version": "vM22",
             "default": True,
             "path": "genebed/mm10/vM22/all.gene.bed",
-        }
+        },
+        {
+            "species": "mm10",
+            "annotation": "2kb",
+            "version": "vM22",
+            "default": True,
+            "path": "feature/mm10/vM22/2kb",
+        },
     ]
 
 
@@ -209,6 +251,7 @@ def test_peak2gene_default_tss(tmp_path: Path, toy_db: Path) -> None:
             species="toy",
             db_path=str(toy_db),
             prom_enha_cutoffs="100bp,3000bp",
+            gene_type="all",
         )
     )
     rows = read_tsv(out)
@@ -222,13 +265,13 @@ def test_peak2gene_default_tss(tmp_path: Path, toy_db: Path) -> None:
         "Distance",
     ]
     assert rows[1][-7:] == ["GeneA", "ENSGA", ".", ".", "GeneA", "ENSGA", "0"]
-    assert rows[2][-7:] == [".", ".", "GeneB,GeneA", "ENSGB,ENSGA", "GeneB", "ENSGB", "1950"]
+    assert rows[2][-7:] == [".", ".", "GeneA,GeneB", "ENSGA,ENSGB", "GeneB", "ENSGB", "1950"]
     assert rows[3][-3:] == ["GeneC", "ENSGC", "950"]
 
 
 def test_peak2gene_keeps_promoter_and_distal_columns_exclusive(tmp_path: Path, toy_db: Path) -> None:
     """voom-compatible output reports distal genes only without promoters."""
-    peaks = write(tmp_path / "peaks.bed", "chr1\t3000\t3050\np1\n")
+    peaks = write(tmp_path / "peaks.bed", "chr1\t3000\t3050\tp1\n")
     output = tmp_path / "output.tsv"
     annotate_peak2gene(
         PeakGeneConfig(
@@ -237,10 +280,11 @@ def test_peak2gene_keeps_promoter_and_distal_columns_exclusive(tmp_path: Path, t
             species="toy",
             db_path=str(toy_db),
             prom_enha_cutoffs="2500bp,6000bp,2500bp",
+            gene_type="all",
         )
     )
     row = read_tsv(output)[1]
-    assert row[3:7] == ["GeneB", "ENSGB", ".", "."]
+    assert row[2:6] == ["GeneB", "ENSGB", ".", "."]
 
 
 def test_peak2gene_finds_default_gene_bed(tmp_path: Path) -> None:
@@ -256,6 +300,7 @@ def test_peak2gene_finds_default_gene_bed(tmp_path: Path) -> None:
             output_path=output,
             species="toy",
             db_path=str(db),
+            gene_type="all",
         )
     )
 
@@ -448,16 +493,32 @@ def test_missing_database_reference_can_be_installed(
 def test_cli_writes_stdout_and_run_log(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     """The CLI should stream output and record resolved references without -o."""
     peaks = write(tmp_path / "peaks.bed", "chr1\t100\t101\tpeak1\n")
-    tss = write(tmp_path / "tss.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\n")
+    tss = write(tmp_path / "tss.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\tprotein_coding\n")
     monkeypatch.chdir(tmp_path)
 
     assert main(["peak2gene", str(peaks), "--tss-bed", str(tss), "--prom-enha-cutoffs", "100bp,3kb"]) == 0
 
     assert "GeneA" in capsys.readouterr().out
     run_log = (tmp_path / ".run.log").read_text(encoding="utf-8")
-    assert "command:" in run_log
-    assert "output: stdout" in run_log
+    assert run_log.count("command:") == 1
+    assert str(peaks.resolve()) in run_log
     assert str(tss.resolve()) in run_log
+    assert "output:" not in run_log
+    assert "reference:" not in run_log
+
+
+def test_cli_writes_command_readme_once(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The optional README contains one section per selected command."""
+    peaks = write(tmp_path / "peaks.bed", "chr1\t100\t101\tpeak1\n")
+    tss = write(tmp_path / "tss.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\tprotein_coding\n")
+    monkeypatch.chdir(tmp_path)
+    assert main(["peak2gene", str(peaks), "--tss-bed", str(tss), "--readme"]) == 0
+    before = (tmp_path / "README.sjcab_peak2anno.txt").read_text(encoding="utf-8")
+    assert main(["peak2gene", str(peaks), "--tss-bed", str(tss), "--readme"]) == 0
+    readme = (tmp_path / "README.sjcab_peak2anno.txt").read_text(encoding="utf-8")
+    assert readme.count("## peak2gene") == 1
+    assert "promoter genes" in readme
+    assert readme == before
 
 
 def test_region_text_accepts_header_and_common_delimiters(tmp_path: Path) -> None:
@@ -496,7 +557,7 @@ def test_minus_strand_tss_uses_bed_end_coordinate(tmp_path: Path) -> None:
 def test_loop2gene_merges_two_anchor_annotations(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     """loop2gene should annotate both BEDPE anchors in one table."""
     loops = write(tmp_path / "loops.bedpe", "chr1\t50\t150\tchr1\t300\t400\n")
-    tss = write(tmp_path / "tss.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\n")
+    tss = write(tmp_path / "tss.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\tprotein_coding\n")
     monkeypatch.chdir(tmp_path)
     assert main(["loop2gene", str(loops), "--tss-bed", str(tss), "--workers", "2", "--output-format", "txt"]) == 0
     output = capsys.readouterr().out
@@ -507,7 +568,7 @@ def test_loop2gene_merges_two_anchor_annotations(tmp_path: Path, capsys: pytest.
 def test_combined_annotations_merge_columns(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     """The combined command should merge multiple annotation result blocks."""
     peaks = write(tmp_path / "peaks.bed", "chr1\t50\t150\tpeak1\n")
-    tss = write(tmp_path / "tss.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\n")
+    tss = write(tmp_path / "tss.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\tprotein_coding\n")
     feature = make_feature_dir(tmp_path)
     monkeypatch.chdir(tmp_path)
     assert main([
@@ -542,8 +603,8 @@ def test_narrow_feature_priority(tmp_path: Path, feature_dir: Path) -> None:
         "Exon",
     ]
     summary_rows = read_tsv(summary)
-    assert summary_rows[0][4:7] == ["Promoter.Up", "Promoter.Down", "Exon"]
-    assert summary_rows[1][4:7] == ["1", "0", "2"]
+    assert summary_rows[0][4:8] == ["Promoter.Up", "Promoter.Down", "5UTR", "3UTR"]
+    assert summary_rows[1][4:8] == ["1", "0", "0", "0"]
 
 
 def test_narrow_feature_finds_feature_dir_under_db_path(tmp_path: Path) -> None:
