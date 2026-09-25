@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3 / 2026-09-25
+
 - Changed multi-input file output to write one result per input using an
   `.anno` default or the `-o` suffix; `stdout` and `/dev/stdout` retain merged
   output. Headerless BED text output now assumes BED3 and names extra columns

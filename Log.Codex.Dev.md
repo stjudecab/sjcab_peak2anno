@@ -11,6 +11,8 @@
 - Corrected `list-db` to hide compatibility `def` folders and select concrete
   installed versions.
 - Added RC support for `SJCAB_PEAK2ANNO_WRITE_README`.
+- Published the `0.3` release and moved its changelog entries into the dated
+  release section.
 
 ## 2026-09-24
 
