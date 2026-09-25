@@ -12,3 +12,10 @@
   feature order-list support, worker options, and related tests.
 - Updated README, API, install, configuration, command, and changelog
   documentation.
+- Made missing database installation automatic by default, limited installs to
+  the requested species, and updated the database CLI subcommands.
+- Corrected `list-db` species/default detection and aligned its output columns;
+  switched gene-reference discovery to `DB_PATH/genebed`.
+- Normalized text output regions to `chr:start-end`, corrected strand-aware
+  TSS and BED half-open distances, and removed gene-type options from
+  feature-only commands.

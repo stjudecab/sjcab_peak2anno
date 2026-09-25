@@ -174,6 +174,7 @@ def gene_annotation_path(
     if version in {"default", "def"}:
         version_names = ["def", "default"]
     candidates = [
+        *(root / "genebed" / species / name / filename for name in version_names),
         *(root / "bed" / species / name / filename for name in version_names),
         *(root / species / name / filename for name in version_names),
         root / species / f"{version}.{isoform_set}.gene.bed",
@@ -191,26 +192,95 @@ def gene_annotation_path(
 
 
 def available_versions(root_path: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Return available database annotations from the manifest or filesystem."""
+    """Return installed database annotations from the manifest and filesystem.
+
+    Database releases may contain a manifest listing resources that are not
+    installed locally, so manifest entries are retained only when their path
+    exists.  The filesystem scan also understands the current layout, such as
+    ``<root>/<species>/<version>/all.gene.bed`` and feature BEDs alongside it.
+    """
     root = db_root(root_path)
     manifest = load_manifest(root)
     resources = manifest_resources(manifest)
-    if resources:
-        return resources
     rows: List[Dict[str, Any]] = []
-    for species_dir in sorted(path for path in root.iterdir() if path.is_dir()):
-        if species_dir.name in {"blacklists", "cgi"}:
+    seen: set[tuple[str, str, str, str]] = set()
+
+    for item in resources:
+        item_path = item.get("path")
+        if not item_path:
             continue
-        for annotation_dir in sorted(path for path in species_dir.iterdir() if path.is_dir()):
-            for bed in sorted(annotation_dir.glob("*.bed")):
-                rows.append(
-                    {
-                        "species": species_dir.name,
-                        "annotation": annotation_dir.name,
-                        "version": bed.stem,
-                        "path": str(bed.relative_to(root)),
-                    }
-                )
+        path = root / str(item_path)
+        if not path.is_file():
+            continue
+        row = dict(item)
+        row["path"] = str(path.relative_to(root))
+        key = (
+            str(row.get("species", ".")),
+            str(row.get("annotation", ".")),
+            str(row.get("version", ".")),
+            row["path"],
+        )
+        seen.add(key)
+        rows.append(row)
+
+    scan_roots = [
+        root / "genebed",
+        root / "feature",
+        root / "features",
+    ]
+    if not (root / "genebed").is_dir():
+        scan_roots.append(root / "bed")
+    if not any(path.is_dir() for path in scan_roots):
+        scan_roots.append(root)
+
+    for scan_root in scan_roots:
+        if not scan_root.is_dir():
+            continue
+        for bed in sorted(scan_root.rglob("*.bed")):
+            relative = bed.relative_to(root)
+            parts = bed.relative_to(scan_root).parts
+            if len(parts) < 2 or parts[0] in {"blacklists", "cgi", ".locks", "bed", "genebed"}:
+                continue
+            species = parts[0]
+            filename = bed.name
+            if filename.endswith(".gene.bed"):
+                annotation = filename[:-len(".bed")]
+                version = parts[-2] if len(parts) >= 3 else "default"
+            elif len(parts) >= 4 and parts[-2] == "features":
+                annotation = bed.stem
+                version = parts[-3]
+            elif len(parts) >= 3:
+                annotation = bed.stem
+                version = parts[-2]
+            else:
+                annotation = bed.stem
+                version = "default"
+            key = (species, annotation, version, str(relative))
+            if key in seen:
+                continue
+            rows.append(
+                {
+                    "species": species,
+                    "annotation": annotation,
+                    "version": version,
+                    "default": version in {"default", "def"},
+                    "path": str(relative),
+                }
+            )
+            seen.add(key)
+
+    # Without a manifest, a species with one installed version has that
+    # version as its usable default.  Preserve explicit manifest defaults.
+    versions_by_species: Dict[str, set[str]] = {}
+    for row in rows:
+        species = str(row.get("species", "."))
+        versions_by_species.setdefault(species, set()).add(str(row.get("version", ".")))
+    for row in rows:
+        if row.get("default") is True:
+            continue
+        species = str(row.get("species", "."))
+        version = str(row.get("version", "."))
+        row["default"] = len(versions_by_species[species]) == 1
     return rows
 
 

@@ -40,7 +40,7 @@ class PeakGeneConfig:
     species_version: str = "default"
     isoform_version: str = "all"
     prom_enha_cutoffs: str = "2kb,50kb,2kb"
-    gene_type: str = "all"
+    gene_type: str = "nomicro"
     db_path: Optional[str] = None
     gene_bed: Optional[Path] = None
     tss_bed: Optional[Path] = None
@@ -119,9 +119,8 @@ def promoter_records(
         if fixed_upstream is not None and fixed_downstream is not None
         else None
     )
-    # ``_promoter_from_candidates`` uses the legacy half-open-side distance
-    # while ``distance_bp`` includes the endpoint.  Retain the boundary
-    # candidate so promoter-first and wide-window classification agree.
+    # Retain the boundary candidate so promoter-first and wide-window
+    # classification agree under BED half-open distance semantics.
     if fixed_window is not None:
         fixed_window += 1
     candidates = (
@@ -350,7 +349,7 @@ def annotate_peak2gene(config: PeakGeneConfig) -> Path:
                 region.chrom,
                 region.start,
                 region.end,
-                output_region_values(region, region.values, output_format) + [
+                    output_region_values(region, region.values, output_format, config.region_column) + [
                     promoter_names,
                     promoter_ids,
                     distal_names,

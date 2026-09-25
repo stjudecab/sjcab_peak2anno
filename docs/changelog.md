@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Updated automatic database installation to use the current
+  `install-genebed` and `install-feature` subcommands.
+- Restricted automatic installation to the requested species and improved
+  `list-db` discovery for installed current-layout BED files.
+- Updated gene-reference discovery to use `DB_PATH/genebed`, corrected
+  species/default reporting, and aligned `list-db` output into columns.
+- Corrected closest-gene distances to use standard BED half-open gap lengths;
+  for example, a gap from peak end 36,936,544 to TSS start 36,974,543 is
+  reported as 37,999 bp.
+- Corrected minus-strand TSS conversion to use the BED end coordinate, so
+  strand-aware closest-gene distances match the GENCODE/voom convention.
+- Removed the gene-type option from feature-only commands.
+- Enabled automatic installation of missing implicit database references by
+  default; use `--no-auto-install-db` to opt out.
+- Changed the default `SJCAB_PEAK2ANNO_GENE_TYPE` and all related API/CLI
+  defaults from `all` to `nomicro`.
 - Reworked the interval backend and documentation for reproducible Python and
   optional bedtools execution, including reviewable one-stage and two-stage
   bedtools scripts and matching peak-to-gene results.

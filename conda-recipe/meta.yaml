@@ -13,9 +13,9 @@ build:
   noarch: python
   script: {{ PYTHON }} -m pip install . -vv --no-deps
   entry_points:
-    - peak2anno = peak2anno.cli:main
-    - sjcab-peak2anno = peak2anno.cli:main
-    - sjcab_peak2anno = peak2anno.cli:main
+    - peak2anno = sjcab_peak2anno.cli:main
+    - sjcab-peak2anno = sjcab_peak2anno.cli:main
+    - sjcab_peak2anno = sjcab_peak2anno.cli:main
 
 requirements:
   host:
@@ -30,7 +30,7 @@ requirements:
 
 test:
   imports:
-    - peak2anno
+    - sjcab_peak2anno
   commands:
     - peak2anno --help
     - sjcab-peak2anno --help

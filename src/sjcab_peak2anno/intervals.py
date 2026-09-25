@@ -591,7 +591,7 @@ def detect_output_format(
 
 def read_bed_records(
     path: Path,
-    gene_type: str = "all",
+    gene_type: str = "nomicro",
     as_tss: bool = False,
 ) -> List[BedRecord]:
     """Read BED-like records with optional gene-type filtering.
@@ -624,13 +624,17 @@ def read_bed_records(
                     continue
                 if fields[8] not in wanted_types:
                     continue
-            start = int(fields[1])
-            end = int(fields[2])
-            if as_tss and end > start + 1:
-                strand = fields[5] if len(fields) > 5 else "."
-                if strand == "-":
-                    start = end - 1
-                end = start + 1
+                start = int(fields[1])
+                end = int(fields[2])
+                if as_tss and end > start + 1:
+                    strand = fields[5] if len(fields) > 5 else "."
+                    if strand == "-":
+                        # Keep the historical voom/GENCODE TSS coordinate:
+                        # plus-strand TSS is the BED start, minus-strand TSS
+                        # is the BED end.  This makes the strand-aware TSS
+                        # point consistent with the reported distance column.
+                        start = end
+                    end = start + 1
             if end < start:
                 raise ValueError(f"End before start at {path}:{line_number}")
             tfields = tuple([fields[0], str(start), str(end)] + fields[3:])
@@ -732,18 +736,17 @@ def overlap_bp(a_start: int, a_end: int, b_start: int, b_end: int) -> int:
 
 
 def distance_bp(a_start: int, a_end: int, b_start: int, b_end: int) -> int:
-    """Return the legacy voom/bedtools-compatible interval distance.
+    """Return the BED half-open distance between two intervals.
 
-    The historical ``voom2anno.sh`` path reports the coordinate distance
-    between non-overlapping BED intervals using inclusive endpoint
-    coordinates.  Retaining the ``+1`` here keeps closest and cutoff
-    boundaries consistent with that output while overlaps remain zero.
+    For non-overlapping BED intervals, the distance is the number of bases in
+    the gap between the half-open endpoints.  For example, ``[0, 10)`` and
+    ``[20, 30)`` are 10 bases apart.
     """
     if overlap_bp(a_start, a_end, b_start, b_end) > 0:
         return 0
     if a_end <= b_start:
-        return b_start - a_end + 1
-    return a_start - b_end + 1
+        return b_start - a_end
+    return a_start - b_end
 
 
 def unique_join(values: Iterable[str]) -> str:
@@ -782,11 +785,24 @@ def write_table(
             writer.writerow(list(row))
 
 
-def output_region_values(region: InputRegion, values: Sequence[object], output_format: str) -> List[object]:
+def output_region_values(
+    region: InputRegion,
+    values: Sequence[object],
+    output_format: str,
+    region_column: int = 0,
+) -> List[object]:
     """Return input values normalized for the requested output format."""
-    if output_format != "bed":
-        return list(values)
     original = list(values)
+    if output_format in {"txt", "txtnohead"}:
+        if len(original) >= 3 and str(original[0]) == region.chrom and str(original[1]) == str(region.start) and str(original[2]) == str(region.end):
+            return [region.region_name] + original[3:]
+        if 0 <= region_column < len(original):
+            original[region_column] = region.region_name
+        elif original:
+            original[0] = region.region_name
+        return original
+    if output_format != "bed":
+        return original
     if len(original) >= 3 and str(original[0]) == region.chrom and str(original[1]) == str(region.start) and str(original[2]) == str(region.end):
         original = original[3:]
     elif original and str(original[0]) == region.region_name:
@@ -795,7 +811,13 @@ def output_region_values(region: InputRegion, values: Sequence[object], output_f
 
 
 def output_region_header(header: Sequence[str], output_format: str) -> List[str]:
-    """Return a header normalized for BED output."""
+    """Return a header normalized for the requested output format."""
+    if output_format in {"txt", "txtnohead"}:
+        if len(header) >= 3 and header[1].lower() in {"start", "chromstart"} and header[2].lower() in {"end", "chromend"}:
+            return ["Region"] + list(header[3:])
+        if header and header[0].lower() in {"region", "coordinate", "coordinates"}:
+            return ["Region"] + list(header[1:])
+        return list(header)
     if output_format != "bed":
         return list(header)
     if len(header) >= 3 and header[1].lower() in {"start", "chromstart"} and header[2].lower() in {"end", "chromend"}:

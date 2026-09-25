@@ -21,7 +21,8 @@ from sjcab_peak2anno.features import (
 )
 from sjcab_peak2anno.cli import build_parser, main
 from sjcab_peak2anno.config import load_settings
-from sjcab_peak2anno.intervals import read_regions
+from sjcab_peak2anno.db import available_versions
+from sjcab_peak2anno.intervals import InputRegion, output_region_header, output_region_values, read_regions
 from sjcab_peak2anno.peak2gene import PeakGeneConfig, annotate_peak2gene, promoter_records
 from sjcab_peak2anno.runtime import ToolStatus, resolve_backend
 
@@ -50,6 +51,51 @@ def test_backend_rejects_unavailable_tool() -> None:
     """Explicit backend requests should fail clearly when unavailable."""
     with pytest.raises(ValueError, match="bedtools was not found"):
         resolve_backend("bedtools", ToolStatus(bedtools=None))
+
+
+def test_gene_type_default_is_nomicro(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The built-in gene-type default excludes micro genes."""
+    monkeypatch.setenv("SJCAB_PEAK2ANNO_CONFIG", str(tmp_path / "settings.rc"))
+    monkeypatch.delenv("SJCAB_PEAK2ANNO_GENE_TYPE", raising=False)
+    assert load_settings().gene_type == "nomicro"
+    assert "#SJCAB_PEAK2ANNO_GENE_TYPE=nomicro" in (tmp_path / "settings.rc").read_text()
+
+
+def test_feature_commands_do_not_accept_gene_type() -> None:
+    """Gene-type filtering belongs only to gene annotation commands."""
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["narrow2feature", "peaks.bed", "--gene-type", "nomicro"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["loop2feature", "loops.bedpe", "--gene-type", "nomicro"])
+    assert parser.parse_args(["loop2gene", "loops.bedpe", "--gene-type", "nomicro"]).gene_type == "nomicro"
+
+
+def test_list_db_reports_installed_current_layout(tmp_path: Path) -> None:
+    """list-db should report files that are actually installed on disk."""
+    write(tmp_path / "mm10" / "vM22" / "all.gene.bed", "chr1\t0\t1\n")
+    write(tmp_path / "mm10" / "vM22" / "2kb.exon.bed", "chr1\t0\t1\n")
+    write(tmp_path / "hg38" / "v31" / "all.gene.bed", "chr1\t0\t1\n")
+    rows = available_versions(str(tmp_path))
+    paths = {row["path"] for row in rows}
+    assert "mm10/vM22/all.gene.bed" in paths
+    assert "mm10/vM22/2kb.exon.bed" in paths
+    assert "hg38/v31/all.gene.bed" in paths
+
+
+def test_list_db_reports_genebed_species_and_default(tmp_path: Path) -> None:
+    """list-db should derive species from DB_PATH/genebed and mark its version default."""
+    write(tmp_path / "genebed" / "mm10" / "vM22" / "all.gene.bed", "chr1\t0\t1\n")
+    rows = available_versions(str(tmp_path))
+    assert rows == [
+        {
+            "species": "mm10",
+            "annotation": "all.gene",
+            "version": "vM22",
+            "default": True,
+            "path": "genebed/mm10/vM22/all.gene.bed",
+        }
+    ]
 
 
 def make_toy_db(tmp_path: Path) -> Path:
@@ -164,7 +210,7 @@ def test_peak2gene_default_tss(tmp_path: Path, toy_db: Path) -> None:
         "Distance",
     ]
     assert rows[1][-7:] == ["GeneA", "ENSGA", ".", ".", "GeneA", "ENSGA", "0"]
-    assert rows[2][-7:] == [".", ".", "GeneB,GeneA", "ENSGB,ENSGA", "GeneB", "ENSGB", "1951"]
+    assert rows[2][-7:] == [".", ".", "GeneB,GeneA", "ENSGB,ENSGA", "GeneB", "ENSGB", "1950"]
     assert rows[3][-3:] == ["GeneC", "ENSGC", "950"]
 
 
@@ -334,34 +380,51 @@ def test_promoter_cutoffs_are_strand_aware() -> None:
 def test_missing_database_reference_can_be_declined(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A missing selected reference should ask before running the installer."""
+    """The no-auto-install flag should decline a missing selected reference."""
     peaks = write(tmp_path / "peaks.bed", "chr1\t100\t101\tpeak1\n")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", type("TTY", (), {"isatty": lambda self: True})())
     monkeypatch.setattr("builtins.input", lambda _prompt: "no")
 
     with pytest.raises(SystemExit):
-        main(["peak2gene", str(peaks), "-s", "missing", "--ver", "v9", "-d", str(tmp_path / "db")])
+        main(["peak2gene", str(peaks), "-s", "missing", "--ver", "v9", "-d", str(tmp_path / "db"), "--no-auto-install-db"])
 
     error = capsys.readouterr().err
-    assert "sjcab-peak2anno-db download-gencode-bed missing v9" in error
+    assert "sjcab-peak2anno-db install-genebed missing v9" in error
     assert "installation declined" in error
+
+
+def test_missing_database_reference_auto_installs_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing implicit reference should install without an interactive prompt."""
+    peaks = write(tmp_path / "peaks.bed", "chr1\t100\t101\tpeak1\n")
+    db = tmp_path / "db"
+    monkeypatch.chdir(tmp_path)
+
+    def fake_install(command: list[str], check: bool) -> subprocess.CompletedProcess[str]:
+        assert check is True
+        write(db / "missing" / "v9" / "all.gene.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\tprotein_coding\n")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr("sjcab_peak2anno.cli.shutil.which", lambda _name: "/fake/sjcab-peak2anno-db")
+    monkeypatch.setattr("sjcab_peak2anno.cli.subprocess.run", fake_install)
+    assert main(["peak2gene", str(peaks), "-s", "missing", "--ver", "v9", "-d", str(db)]) == 0
 
 
 def test_missing_database_reference_can_be_installed(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A yes response should run the proposed installer and retry the command."""
+    """The default should run the proposed installer and retry the command."""
     peaks = write(tmp_path / "peaks.bed", "chr1\t100\t101\tpeak1\n")
     db = tmp_path / "db"
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "stdin", type("TTY", (), {"isatty": lambda self: True})())
-    monkeypatch.setattr("builtins.input", lambda _prompt: "yes")
 
     def fake_install(command: list[str], check: bool) -> subprocess.CompletedProcess[str]:
         assert check is True
-        assert command[1:5] == ["sjcab-peak2anno-db", "download-gencode-bed", "missing", "v9"]
-        write(db / "missing" / "v9" / "all.gene.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\n")
+        assert command[:4] == ["/fake/sjcab-peak2anno-db", "install-genebed", "missing", "v9"]
+        write(db / "missing" / "v9" / "all.gene.bed", "chr1\t99\t100\tGeneA\t.\t+\tENSGA\tTXA\tprotein_coding\n")
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr("sjcab_peak2anno.cli.shutil.which", lambda _name: "/fake/sjcab-peak2anno-db")
@@ -399,6 +462,23 @@ def test_region_text_accepts_custom_delimiter(tmp_path: Path) -> None:
     header, regions = read_regions(path, input_format="txt", txt_delimiter="|")
     assert header == ["region"]
     assert regions[0].region_name == "chr1:100-200"
+
+
+def test_text_output_normalizes_region_column() -> None:
+    """Text output should use canonical chr:start-end coordinates."""
+    region = InputRegion("chr1", 1, 1000, ("chr1", "1", "1000", "peak1"))
+    assert output_region_values(region, region.values, "txt") == ["chr1:1-1000", "peak1"]
+    assert output_region_values(region, region.values, "txtnohead") == ["chr1:1-1000", "peak1"]
+    assert output_region_header(["chr", "start", "end", "name"], "txt") == ["Region", "name"]
+
+
+def test_minus_strand_tss_uses_bed_end_coordinate(tmp_path: Path) -> None:
+    """Minus-strand TSS distance should use the gene BED end coordinate."""
+    gene = write(tmp_path / "gene.bed", "chr1\t100\t200\tGeneA\t.\t-\tID\tTX\tprotein_coding\n")
+    from sjcab_peak2anno.intervals import read_bed_records
+
+    record = read_bed_records(gene, gene_type="nomicro", as_tss=True)[0]
+    assert (record.start, record.end) == (200, 201)
 
 
 def test_loop2gene_merges_two_anchor_annotations(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:

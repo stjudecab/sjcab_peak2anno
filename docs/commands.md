@@ -53,8 +53,8 @@ Common options include:
 - `-x/--overlap-cutoff` (default: 1bp): minimum overlap threshold.
 - `-m/--summary` (default: none): summary output path.
 - `-p/--plot` (default: false): write summary plots.
-- `-a/--auto-install-db` (default: false): offer to install missing database files.
-- `-A/--no-auto-install-db` (default: disabled): disable database installation.
+- `-a/--auto-install-db` (default: true): automatically install missing database files.
+- `-A/--no-auto-install-db` (default: disabled): disable automatic database installation.
 
 Gene-reference options include:
 
@@ -63,7 +63,9 @@ Gene-reference options include:
 - `--iso/--isoform-set` (default: all): `all` or `deduplong`.
 - `-g/--gene-bed` (default: database reference): explicit gene BED.
 - `-t/--tss-bed` (default: computed from gene BED): explicit TSS BED.
-- `-G/--gene-type` (default: all): gene-type filter.
+- `-G/--gene-type` (default: nomicro): gene-type filter for `peak2gene` and
+  `loop2gene`. `narrow2feature`, `broad2feature`, and `loop2feature` do not
+  accept this option.
 
 ## Combining commands
 
@@ -108,8 +110,18 @@ peak2anno loop2state loops.bedpe --states states.bed \
 - `all`
 - `protein_coding`
 - `lincRNA`
-- `nomicro`
-- A comma-separated custom list.
+- `nomicro`: protein_coding,processed_transcript,processed_pseudogene,
+  transcribed_processed_pseudogene,transcribed_unprocessed_pseudogene,
+  translated_unprocessed_pseudogene,transcribed_unitary_pseudogene,
+  lincRNA,macro_lncRNA,bidirectional_promoter_lncrna
+- A comma-separated custom list from: protein_coding,lncRNA,processed_pseudogene,
+  unprocessed_pseudogene,miRNA,snRNA,misc_RNA,TEC,transcribed_unprocessed_pseudogene,
+  snoRNA,rRNA_pseudogene,transcribed_processed_pseudogene,IG_V_pseudogene,IG_V_gene,
+  transcribed_unitary_pseudogene,TR_V_gene,unitary_pseudogene,TR_J_gene,rRNA,
+  polymorphic_pseudogene,IG_D_gene,TR_V_pseudogene,scaRNA,Mt_tRNA,pseudogene,
+  IG_J_gene,IG_C_gene,IG_C_pseudogene,ribozyme,TR_C_gene,TR_J_pseudogene,TR_D_gene
+  ,IG_J_pseudogene,translated_unprocessed_pseudogene,translated_processed_pseudogene,
+  sRNA,Mt_rRNA,vaultRNA,scRNA,IG_pseudogene
 
 ## Run logs
 

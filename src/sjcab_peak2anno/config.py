@@ -11,12 +11,12 @@ from typing import Dict, Optional
 
 DEFAULT_SPECIES_VERSIONS = "hg38:v31"
 DEFAULT_PROM_ENHA_CUTOFFS = "2kb,50kb,2kb"
-DEFAULT_GENE_TYPE = "all"
+DEFAULT_GENE_TYPE = "nomicro"
 DEFAULT_ISO_SET = "all"
 DEFAULT_2FEATURE_OUT = "max"
 DEFAULT_2STATE_OUT = "max,percent"
 DEFAULT_TXT_DELIMITER = "auto"
-DEFAULT_BACKEND = "auto"
+DEFAULT_BACKEND = "python"
 
 RC_DEFAULTS = {
     "SJCAB_PEAK2ANNO_DB_PATH": "~/.sjcab_peak2anno_db",
@@ -127,13 +127,13 @@ def _ensure_rc_template(path: Path) -> None:
             if "=" in line:
                 present.add(line.split("=", 1)[0].strip())
         missing = [
-            f"# {key}={value}"
+            f"#{key}={value}"
             for key, value in RC_DEFAULTS.items()
             if key not in present
         ]
         if not any(key.startswith("SJCAB_PEAK2ANNO_PROM_ENHA_CUTOFFS_") for key in present):
             missing.append(
-                "# SJCAB_PEAK2ANNO_PROM_ENHA_CUTOFFS_<species>_<version>=2kb,50kb,2kb"
+                "#SJCAB_PEAK2ANNO_PROM_ENHA_CUTOFFS_<species>_<version>=2kb,50kb,2kb"
             )
         if not missing:
             return

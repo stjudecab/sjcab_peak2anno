@@ -370,7 +370,7 @@ def annotate_narrow_feature(config: FeatureConfig) -> Tuple[Path, Path]:
             out_header.extend(f"{label.replace(' ', '_')}_percent" for label in indexes)
     rows = []
     for region, assignment in zip(regions, assignments):
-        values = output_region_values(region, region.values, output_format)
+        values = output_region_values(region, region.values, output_format, config.region_column)
         percentages = ordered_percentages(region, indexes) if "percent" in modes else None
         for mode in modes:
             if mode == "max":
@@ -465,7 +465,7 @@ def annotate_broad_feature(config: FeatureConfig) -> Tuple[Path, Path]:
     indexes = feature_indexes(specs)
     cutoff = parse_overlap_cutoff(config.overlap_cutoff)
     extra_header, extra_rows, primary_counts, bp_totals = broad_rows(regions, indexes, cutoff, config.output_mode, priority_max=True)
-    rows = [output_region_values(region, region.values, output_format) + extra for region, extra in zip(regions, extra_rows)]
+    rows = [output_region_values(region, region.values, output_format, config.region_column) + extra for region, extra in zip(regions, extra_rows)]
     write_table(config.output_path, output_region_header(header, output_format) + extra_header, rows, include_header=output_format == "txt")
 
     summary = config.summary_path or (
@@ -531,7 +531,7 @@ def annotate_peak_state(config: StateConfig) -> Tuple[Path, Path]:
     indexes = load_state_index(config.states_path, state_names)
     cutoff = parse_overlap_cutoff(config.overlap_cutoff)
     extra_header, extra_rows, primary_counts, bp_totals = broad_rows(regions, indexes, cutoff, config.output_mode)
-    rows = [output_region_values(region, region.values, output_format) + extra for region, extra in zip(regions, extra_rows)]
+    rows = [output_region_values(region, region.values, output_format, config.region_column) + extra for region, extra in zip(regions, extra_rows)]
     write_table(config.output_path, output_region_header(header, output_format) + extra_header, rows, include_header=output_format == "txt")
 
     summary = config.summary_path or (
