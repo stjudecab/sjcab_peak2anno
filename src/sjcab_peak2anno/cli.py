@@ -34,7 +34,7 @@ from .intervals import detect_output_format, read_regions, write_table
 from .runtime import detect_tools, resolve_backend, warn_if_slow
 
 
-DB_PACKAGE = "sjcab_peak2anno_db==0.1.8"
+DB_PACKAGE = "sjcab_peak2anno_db"
 
 
 def add_common_feature_args(parser: argparse.ArgumentParser, settings: Settings) -> None:
@@ -75,15 +75,15 @@ def add_input_args(parser: argparse.ArgumentParser, help_text: str, txt_delimite
     parser.set_defaults(txt_delimiter=txt_delimiter)
 
 
-def add_db_install_args(parser: argparse.ArgumentParser) -> None:
+def add_db_install_args(parser: argparse.ArgumentParser, settings: Settings) -> None:
     """Add automatic database installation controls."""
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "-a", "--auto-install-db",
         dest="auto_install_db",
         action="store_true",
-        default=True,
-        help="Install missing gene/feature BEDs automatically (default).",
+        default=settings.auto_install_db,
+        help="Install missing gene/feature BEDs automatically.",
     )
     group.add_argument(
         "-A", "--no-auto-install-db",
@@ -147,7 +147,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_input_args(peak2gene, "Input BED/TSV or region-text file.", settings.txt_delimiter)
-    add_db_install_args(peak2gene)
+    add_db_install_args(peak2gene, settings)
     peak2gene.add_argument("-o", "--output", type=Path, help="Output TSV path; defaults to stdout.")
     peak2gene.add_argument("-s", "--species", default=settings.default_species, help="Species key, for example hg38 or mm10.")
     peak2gene.add_argument(
@@ -184,7 +184,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_common_feature_args(narrow, settings)
-    add_db_install_args(narrow)
+    add_db_install_args(narrow, settings)
     narrow.add_argument("--column-name", default="FeatureAssignment", help="Output annotation column name.")
     add_output_mode_arg(narrow, settings.feature_out, "Output max assignment, ordered percentages, or both.")
 
@@ -194,7 +194,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_common_feature_args(broad, settings)
-    add_db_install_args(broad)
+    add_db_install_args(broad, settings)
     add_output_mode_arg(broad, settings.feature_out, "Output max assignment, ordered percentages, or both.")
 
     state = subparsers.add_parser(
@@ -203,7 +203,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_input_args(state, "Input BED/TSV or region-text file.", settings.txt_delimiter)
-    add_db_install_args(state)
+    add_db_install_args(state, settings)
     state.add_argument("-s", "-S", "--states", type=Path, required=True, help="Chromatin state dense/segments BED.")
     state.add_argument("-o", "--output", type=Path, help="Output TSV path; defaults to stdout.")
     state.add_argument("-N", "--state2name", type=Path, help="Optional two-column state ID to label mapping.")
@@ -226,7 +226,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     ):
         loop = subparsers.add_parser(name, help=help_text, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         add_input_args(loop, "BEDPE input.", settings.txt_delimiter)
-        add_db_install_args(loop)
+        add_db_install_args(loop, settings)
         loop.add_argument("-o", "--output", type=Path, help="Output path; defaults to stdout.")
         loop.add_argument("-H", "--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
         loop.add_argument("-C", "--loop-columns", default="0,1,2,3,4,5", help="BEDPE coordinate columns.")
@@ -251,7 +251,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     combined = subparsers.add_parser("combined", help="Run multiple annotations and merge their columns.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     combined.add_argument("--commands", action="append", choices=["peak2gene", "narrow2feature", "broad2feature", "peak2state"], required=True, help="Annotation step; repeat for multiple steps.")
     add_input_args(combined, "Input BED/TSV or region-text file.", settings.txt_delimiter)
-    add_db_install_args(combined)
+    add_db_install_args(combined, settings)
     combined.add_argument("-o", "--output", type=Path, help="Output path; defaults to stdout.")
     combined.add_argument("-s", "--species", default=settings.default_species, help="Species key.")
     combined.add_argument("-d", "--db-path", default=settings.db_path, help="Database root.")

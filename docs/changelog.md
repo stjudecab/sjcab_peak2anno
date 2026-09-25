@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Removed the `sjcab_peak2anno_db` version constraint from pip, conda, and
+  automatic database installation.
+- Added `SJCAB_PEAK2ANNO_AUTO_INSTALL_DB` rc/environment configuration for
+  the automatic database-installation default.
+
 ## 0.2.0 / 2026-09-24
 
 - Updated automatic database installation to use the current

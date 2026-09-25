@@ -24,6 +24,7 @@ path and writes supported settings as commented examples.
 #SJCAB_PEAK2ANNO_2STATE_OUT=max,percent                  # State output mode like Feature output mode
 #SJCAB_PEAK2ANNO_TXT_DELIMITER=auto                      # Delimiter inside text regions such as ":-" for chr1:100-200
 #SJCAB_PEAK2ANNO_BACKEND=auto                            # default python: python|auto|bedtools
+#SJCAB_PEAK2ANNO_AUTO_INSTALL_DB=true                    # Automatically install missing DB files
 #SJCAB_PEAK2ANNO_PROM_ENHA_CUTOFFS_<species>_<version>=2kb,50kb,2kb
 ```
 

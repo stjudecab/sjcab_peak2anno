@@ -17,6 +17,7 @@ DEFAULT_2FEATURE_OUT = "max"
 DEFAULT_2STATE_OUT = "max,percent"
 DEFAULT_TXT_DELIMITER = "auto"
 DEFAULT_BACKEND = "python"
+DEFAULT_AUTO_INSTALL_DB = True
 
 RC_DEFAULTS = {
     "SJCAB_PEAK2ANNO_DB_PATH": "~/.sjcab_peak2anno_db",
@@ -28,6 +29,7 @@ RC_DEFAULTS = {
     "SJCAB_PEAK2ANNO_2STATE_OUT": DEFAULT_2STATE_OUT,
     "SJCAB_PEAK2ANNO_TXT_DELIMITER": DEFAULT_TXT_DELIMITER,
     "SJCAB_PEAK2ANNO_BACKEND": DEFAULT_BACKEND,
+    "SJCAB_PEAK2ANNO_AUTO_INSTALL_DB": str(DEFAULT_AUTO_INSTALL_DB).lower(),
 }
 
 
@@ -45,6 +47,7 @@ class Settings:
     state_out: str
     txt_delimiter: str
     backend: str
+    auto_install_db: bool
 
     @property
     def default_species(self) -> str:
@@ -160,6 +163,7 @@ def load_settings() -> Settings:
         "SJCAB_PEAK2ANNO_2STATE_OUT": DEFAULT_2STATE_OUT,
         "SJCAB_PEAK2ANNO_TXT_DELIMITER": DEFAULT_TXT_DELIMITER,
         "SJCAB_PEAK2ANNO_BACKEND": DEFAULT_BACKEND,
+        "SJCAB_PEAK2ANNO_AUTO_INSTALL_DB": str(DEFAULT_AUTO_INSTALL_DB).lower(),
     }
     candidates = rc_paths()
     rc_file = next((path for path in candidates if path.is_file()), candidates[0])
@@ -189,6 +193,10 @@ def load_settings() -> Settings:
         state_out=values["SJCAB_PEAK2ANNO_2STATE_OUT"],
         txt_delimiter=values["SJCAB_PEAK2ANNO_TXT_DELIMITER"],
         backend=values["SJCAB_PEAK2ANNO_BACKEND"],
+        auto_install_db=_parse_bool(
+            values["SJCAB_PEAK2ANNO_AUTO_INSTALL_DB"],
+            "SJCAB_PEAK2ANNO_AUTO_INSTALL_DB",
+        ),
     )
     if settings.iso_set not in {"all", "deduplong"}:
         raise ValueError("SJCAB_PEAK2ANNO_ISO_SET must be all or deduplong")
@@ -199,3 +207,13 @@ def load_settings() -> Settings:
     # Validate the mapping while reporting configuration errors before parsing CLI args.
     settings.species_version_map
     return settings
+
+
+def _parse_bool(value: str, name: str) -> bool:
+    """Parse a boolean rc/env setting."""
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be true/false, yes/no, on/off, or 1/0")

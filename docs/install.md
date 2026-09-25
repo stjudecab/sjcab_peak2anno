@@ -20,7 +20,7 @@ This requires `bedtools` in `PATH`.
 The conda package does not require external interval tools:
 
 ```bash
-conda install -c stjudecab sjcab_peak2anno sjcab_peak2anno_db=0.1.8
+conda install -c stjudecab sjcab_peak2anno sjcab_peak2anno_db
 ```
 
 ## Test a source checkout

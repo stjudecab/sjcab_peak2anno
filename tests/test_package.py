@@ -61,6 +61,18 @@ def test_gene_type_default_is_nomicro(tmp_path: Path, monkeypatch: pytest.Monkey
     assert "#SJCAB_PEAK2ANNO_GENE_TYPE=nomicro" in (tmp_path / "settings.rc").read_text()
 
 
+def test_auto_install_db_can_be_configured_by_rc_and_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The auto-install default is configurable and environment wins over rc."""
+    rc = write(tmp_path / "settings.rc", "SJCAB_PEAK2ANNO_AUTO_INSTALL_DB=false\n")
+    monkeypatch.setenv("SJCAB_PEAK2ANNO_CONFIG", str(rc))
+    monkeypatch.delenv("SJCAB_PEAK2ANNO_AUTO_INSTALL_DB", raising=False)
+    assert load_settings().auto_install_db is False
+    monkeypatch.setenv("SJCAB_PEAK2ANNO_AUTO_INSTALL_DB", "yes")
+    assert load_settings().auto_install_db is True
+
+
 def test_feature_commands_do_not_accept_gene_type() -> None:
     """Gene-type filtering belongs only to gene annotation commands."""
     parser = build_parser()

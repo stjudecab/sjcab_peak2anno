@@ -28,7 +28,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Bio-Informatics"
 ]
 dependencies = [
-    "sjcab_peak2anno_db>=0.1.8",
+    "sjcab_peak2anno_db",
 ]
 
 [project.urls]

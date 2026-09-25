@@ -56,6 +56,9 @@ Common options include:
 - `-a/--auto-install-db` (default: true): automatically install missing database files.
 - `-A/--no-auto-install-db` (default: disabled): disable automatic database installation.
 
+The default is also configurable with `SJCAB_PEAK2ANNO_AUTO_INSTALL_DB` in
+the rc file or environment (`true`/`false`). CLI flags override that setting.
+
 Gene-reference options include:
 
 - `-s/--species` (default: configured species, usually hg38): species key.

@@ -21,3 +21,5 @@
   feature-only commands.
 - Fixed feature/state BED loading so feature-only commands do not apply the
   gene-type filter.
+- Removed the database-package version constraint from pip, conda, and
+  automatic database installation.
