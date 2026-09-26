@@ -21,18 +21,10 @@ Read the full documentation at
 
 ## Install
 
-Pip version does not require `bedtools`; `auto` uses the Python interval
-backend. To use native bedtools and create a reviewable script, set
-`SJCAB_PEAK2ANNO_BACKEND=bedtools` with bedtools available in `PATH`.
-The generated `bedtools-peak2anno.sh` supports mode `1` (one wide window) and
-mode `2` (promoter-first, enhancer-second).
-
 ```bash
 pip install sjcab_peak2anno
 ```
-
-The conda package does not require external interval tools.
-
+or
 ```bash
 conda install stjudecab::sjcab_peak2anno
 ```
@@ -88,3 +80,8 @@ Representative loop output contains separate anchor columns:
 chr1 100000 101000 chr1 200000 201000 anchor1_Closest_Gene anchor2_Closest_Gene
 chr1 100000 101000 chr1 200000 201000 GeneA                 GeneC
 ```
+
+To use native bedtools(a little bit slower in our tests) and create a reviewable script, set
+`SJCAB_PEAK2ANNO_BACKEND=bedtools` with bedtools available in `PATH`.
+The generated `bedtools-peak2anno.sh` supports mode `1` (one wide window) and
+mode `2` (promoter-first, enhancer-second).
