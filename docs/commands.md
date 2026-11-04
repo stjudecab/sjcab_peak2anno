@@ -48,7 +48,7 @@ Common options include:
   suffix (`-o XXX` writes `input.bed.XXX`); `stdout` or `/dev/stdout` merges
   all inputs to stdout. Without `-o`, multiple inputs write `input.bed.anno`.
 - `-f/--output-format` (default: auto): `auto`, `bed`, `bedpe`, `txt`, or `txtnohead`.
-- `-I/--input-format` (default: auto): `auto`, `bed`, `txt`, or `txtnohead`.
+- `-I/--input-format` (default: auto): `auto`, `bed`, `vcf`, `txt`, or `txtnohead`.
 - `-H/--header` (default: auto): `auto`, `yes`, or `no`.
 - `-C/--columns` (default: 0,1,2): zero-based BED coordinate columns.
 - `-R/--region-column` (default: 0): zero-based text-region column.
@@ -111,6 +111,38 @@ peak2anno loop2feature loops.bedpe --feature-dir annotations/hg38 \
 peak2anno loop2state loops.bedpe --states states.bed \
   --output-format bedpe -o loops.states.bedpe
 ```
+
+## Paired-loop operations
+
+The package includes Python implementations of common paired-loop operations:
+
+- `inter1d`: intersect the source anchor, target anchor, or both anchors with
+  a BED file. Use `--direction source|target|both` and the result appends `A`,
+  `B`, or `AB` in `Intersected_Anchor`.
+- `inter`: retain loops whose two anchors overlap a loop in a second BEDPE file.
+  `--direction direction` matches source-to-source and target-to-target;
+  `--direction reverse` matches source-to-target and target-to-source.
+- `merge`: use `--direction source|target|both`. A one-anchor merge replaces
+  only that anchor and retains every loop's other anchor; `both` merges paired
+  anchors when both overlap within `--distance`.
+
+```bash
+peak2anno inter1d -i loops.bedpe -b regions.bed -D source -f txt -o hits.tsv
+peak2anno inter -i loops.bedpe -b other.bedpe -D reverse -f bedpe -o overlap.bedpe
+peak2anno merge -i loops.bedpe -D source -d 0 -f bedpe -o merged.bedpe
+```
+
+All three commands accept `-f bedpe`, `-f txt` (with a header), and
+`-f txtnohead`; `-f auto` follows the input's BEDPE/header style. BEDPE
+columns 1--3 are the source anchor and columns 4--6 are the target anchor.
+
+These operations use zero-based half-open BEDPE coordinates. In a benchmark
+against the installed pgltools Python 2 implementations, `inter1d`
+took 0.50 seconds versus 21.94 seconds for 20,000 loops and 2,000 BED
+regions; `inter` took 0.73 seconds versus 22.11 seconds for 3,000
+paired loops; and `merge` took 0.35 seconds versus 1.71 seconds for
+20,000 loops. The pgltools shell wrapper currently fails under Python 3, so
+its Python 2 implementation was called directly.
 
 ## Gene filters
 

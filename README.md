@@ -88,3 +88,40 @@ Representative loop output contains separate anchor columns:
 chr1 100000 101000 chr1 200000 201000 anchor1_Closest_Gene anchor2_Closest_Gene
 chr1 100000 101000 chr1 200000 201000 GeneA                 GeneC
 ```
+
+### Loop operations
+
+Loop files use BEDPE coordinates: columns 1--3 are the source anchor and
+columns 4--6 are the target anchor. The operations `inter1d`, `inter`, and
+`merge` write `bedpe`, `txt` (with a header), or `txtnohead` output.
+
+```bash
+# Intersect either selected anchor with a BED file
+peak2anno inter1d -i tests_data/loops.bedpe -b tests_data/loop_regions.bed \
+  --direction source -f txt
+
+# Same direction: source-source and target-target
+peak2anno inter -i tests_data/loops.bedpe -b tests_data/loops_reverse.bedpe \
+  --direction direction -f bedpe -o same-direction.bedpe
+
+# Reverse direction: source-target and target-source
+peak2anno inter -i tests_data/loops.bedpe -b tests_data/loops_reverse.bedpe \
+  --direction reverse -f txtnohead -o reverse-direction.txt
+
+# Merge source anchors while retaining every loop's original target anchor
+peak2anno merge -i tests_data/loops.bedpe --direction source \
+  -f bedpe -o merged-source.bedpe
+```
+
+For example, source merging turns two overlapping source anchors into two
+rows with the same merged source while retaining their separate targets:
+
+```text
+chr1  0  15  chr1  100 110  A
+chr1  0  15  chr1  105 115  B
+```
+
+The included fixtures `tests_data/loops.bedpe`,
+`tests_data/loops_direction.bedpe`, and `tests_data/loops_reverse.bedpe` can
+be used to test same-direction, reverse-direction, and one-anchor merge
+behavior. Use `peak2anno <command> --help` to see all defaults.

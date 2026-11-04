@@ -17,6 +17,7 @@
 !**/*.toml
 !**/*.yml
 !**/*.json
+!**/*.bedpe
 !**/*.lock
 !**/.env*
 !**/Dockerfile

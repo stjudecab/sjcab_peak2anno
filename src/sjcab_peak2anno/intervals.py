@@ -473,8 +473,10 @@ def read_regions(
     """
     if header not in {"auto", "yes", "no"}:
         raise ValueError("header must be one of: auto, yes, no")
-    if input_format not in {"auto", "bed", "txt", "txtnohead"}:
-        raise ValueError("input format must be one of: auto, bed, txt, txtnohead")
+    if input_format not in {"auto", "bed", "vcf", "txt", "txtnohead"}:
+        raise ValueError("input format must be one of: auto, bed, vcf, txt, txtnohead")
+    if input_format == "vcf" or path.suffix.lower() == ".vcf":
+        return read_vcf_regions(path)
     rows: List[List[str]] = []
     with path.open("r", encoding="utf-8") as handle:
         for raw in handle:
@@ -555,6 +557,8 @@ def detect_output_format(
     """Return the default output mode implied by an input file."""
     if input_format == "bed":
         return "bed"
+    if input_format == "vcf" or path.suffix.lower() == ".vcf":
+        return "txt"
     rows = []
     with path.open("r", encoding="utf-8") as handle:
         for raw in handle:
@@ -589,6 +593,44 @@ def detect_output_format(
     if header == "no":
         return "txtnohead"
     return "txt" if not _region_matches(first[region_column], txt_delimiter) else "txtnohead"
+
+
+def read_vcf_regions(path: Path) -> Tuple[List[str], List[InputRegion]]:
+    """Read VCF records as half-open variant intervals."""
+    vcf_header: Optional[List[str]] = None
+    records: List[InputRegion] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, raw in enumerate(handle, start=1):
+            line = raw.rstrip("\n")
+            if not line:
+                continue
+            if line.startswith("##"):
+                continue
+            if line.startswith("#CHROM"):
+                vcf_header = split_fields(line)
+                continue
+            if line.startswith("#"):
+                continue
+            fields = split_fields(line)
+            if len(fields) < 5:
+                raise ValueError(f"Invalid VCF record at {path}:{line_number}: fewer than 5 columns")
+            try:
+                pos = int(fields[1])
+            except ValueError as exc:
+                raise ValueError(f"Invalid VCF POS at {path}:{line_number}: {fields[1]!r}") from exc
+            if pos < 1:
+                raise ValueError(f"VCF POS must be >= 1 at {path}:{line_number}")
+            start = pos - 1
+            end = start + max(1, len(fields[3]))
+            values = tuple([fields[0], str(start), str(end)] + fields[2:])
+            records.append(InputRegion(fields[0], start, end, values))
+    if not records:
+        raise ValueError(f"No VCF records found in {path}")
+    if vcf_header is None:
+        width = len(records[0].values)
+        vcf_header = ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO"]
+        vcf_header.extend(f"field{i}" for i in range(9, width + 1))
+    return ["chr", "start", "end"] + vcf_header[2:], records
 
 
 def read_bed_records(

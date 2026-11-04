@@ -29,6 +29,7 @@ from .config import Settings, load_settings
 from .db import available_versions, db_root, gene_annotation_path
 from .peak2gene import PeakGeneConfig, annotate_peak2gene, resolve_tss_path
 from .loops import annotate_loop
+from .loopops import loop_inter, loop_inter1d, loop_merge
 from .intervals import detect_output_format, read_regions, write_table
 from .runtime import detect_tools, resolve_backend, warn_if_slow
 
@@ -47,7 +48,7 @@ def add_common_feature_args(parser: argparse.ArgumentParser, settings: Settings)
         "-c", "--feature-dir", type=Path,
         help="Feature BED directory. If omitted, search --db-path for the species feature files.",
     )
-    parser.add_argument("-I", "--input-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Input format.")
+    parser.add_argument("-I", "--input-format", choices=["auto", "bed", "vcf", "txt", "txtnohead"], default="auto", help="Input format.")
     parser.add_argument("-C", "--columns", help="BED columns as comma-separated zero-based indexes, for example 0,1,2.")
     parser.add_argument("-R", "--region-column", type=int, default=0, help="Zero-based region column for txt input.")
     parser.add_argument("-f", "--output-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows input format.")
@@ -113,7 +114,7 @@ def run_multiple_inputs(args: argparse.Namespace, input_paths: Sequence[Path]) -
     requested_format = args.output_format
     shared_format = requested_format
     if to_stdout and shared_format == "auto":
-        if args.command in {"loop2gene", "loop2feature", "loop2state"}:
+        if args.command in {"loop2gene", "loop2feature", "loop2state", "inter1d", "inter", "merge"}:
             first = next(
                 line for line in input_paths[0].read_text(encoding="utf-8").splitlines()
                 if line.strip() and not line.startswith(("#", "track", "browser"))
@@ -280,7 +281,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     peak2gene.add_argument("-g", "--gene-bed", type=Path, help="Override gene BED; TSS is computed from strand.")
     peak2gene.add_argument("-t", "--tss-bed", type=Path, help="Override TSS BED.")
     peak2gene.add_argument("-H", "--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
-    peak2gene.add_argument("-I", "--input-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Input format.")
+    peak2gene.add_argument("-I", "--input-format", choices=["auto", "bed", "vcf", "txt", "txtnohead"], default="auto", help="Input format.")
     peak2gene.add_argument("-C", "--columns", help="BED columns as comma-separated zero-based indexes, for example 0,1,2.")
     peak2gene.add_argument("-R", "--region-column", type=int, default=0, help="Zero-based region column for txt input.")
     peak2gene.add_argument("-f", "--output-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows input format.")
@@ -323,7 +324,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         help="Minimum overlap. Examples: 1bp, 10bp, 0.1 for 10%% of peak, 10%%.",
     )
     state.add_argument("-H", "--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
-    state.add_argument("-I", "--input-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Input format.")
+    state.add_argument("-I", "--input-format", choices=["auto", "bed", "vcf", "txt", "txtnohead"], default="auto", help="Input format.")
     state.add_argument("-C", "--columns", help="BED columns as comma-separated zero-based indexes, for example 0,1,2.")
     state.add_argument("-R", "--region-column", type=int, default=0, help="Zero-based region column for txt input.")
     state.add_argument("-f", "--output-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows input format.")
@@ -359,6 +360,31 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
         add_gene_cutoff_args(loop, settings)
         add_output_mode_arg(loop, settings.state_out if name == "loop2state" else settings.feature_out, "Output max assignment, ordered percentages, or both.")
 
+    for name, help_text in (
+        ("inter1d", "Intersect selected loop anchors with a BED file."),
+        ("inter", "Intersect paired loops in the same or reverse direction."),
+        ("merge", "Merge selected anchors of paired loops."),
+    ):
+        operation = subparsers.add_parser(name, help=help_text, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        add_input_args(operation, "Input BEDPE loop file.", settings.txt_delimiter)
+        operation.add_argument("-o", "--output", type=Path, help="Output path; defaults to stdout.")
+        operation.add_argument("-f", "--output-format", choices=["auto", "bedpe", "bed", "txt", "txtnohead"], default="auto", help="Output format.")
+        operation.add_argument("-H", "--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
+        operation.add_argument("-C", "--loop-columns", default="0,1,2,3,4,5", help="BEDPE coordinate columns.")
+        operation.add_argument("-d", "--distance", type=int, default=0, help="Additional overlap distance.")
+        if name == "inter1d":
+            operation.add_argument("-b", "--bed", required=True, type=Path, help="BED file to intersect.")
+            operation.add_argument("-v", "--invert", action="store_true", help="Report loops with no anchor overlap.")
+            operation.add_argument("-u", "--unique", action="store_true", help="Report each loop at most once.")
+            operation.add_argument("-D", "--direction", choices=["both", "source", "target"], default="both", help="Anchors to inspect.")
+        elif name == "inter":
+            operation.add_argument("-b", "--other", required=True, type=Path, help="Second BEDPE loop file.")
+            operation.add_argument("--union", action="store_true", help="Output union coordinates instead of intersection.")
+            operation.add_argument("--keep", choices=["intersection", "a", "b"], default="intersection", help="Coordinates/annotations to retain.")
+            operation.add_argument("-D", "--direction", choices=["direction", "reverse"], default="direction", help="Match source-to-source/target-to-target or source-to-target/target-to-source.")
+        else:
+            operation.add_argument("-D", "--direction", choices=["both", "source", "target"], default="both", help="Anchor to merge; both merges paired anchors.")
+
     combined = subparsers.add_parser("combined", help="Run multiple annotations and merge their columns.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     combined.add_argument("--commands", action="append", choices=["peak2gene", "narrow2feature", "broad2feature", "peak2state"], required=True, help="Annotation step; repeat for multiple steps.")
     add_input_args(combined, "Input BED/TSV or region-text file.", settings.txt_delimiter)
@@ -382,7 +408,7 @@ def build_parser(settings: Optional[Settings] = None) -> argparse.ArgumentParser
     combined.add_argument("--column-name", default="FeatureAssignment", help="Feature output column name.")
     combined.add_argument("-x", "--overlap-cutoff", default="1bp", help="Minimum overlap.")
     combined.add_argument("-H", "--header", choices=["auto", "yes", "no"], default="auto", help="Input header handling.")
-    combined.add_argument("-I", "--input-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto")
+    combined.add_argument("-I", "--input-format", choices=["auto", "bed", "vcf", "txt", "txtnohead"], default="auto")
     combined.add_argument("-C", "--columns")
     combined.add_argument("-R", "--region-column", type=int, default=0)
     combined.add_argument("-f", "--output-format", choices=["auto", "bed", "txt", "txtnohead"], default="auto", help="Output format; auto follows input format.")
@@ -524,6 +550,26 @@ def run(args: argparse.Namespace) -> Optional[Path]:
             order_lst=args.order_lst,
             workers=args.workers,
         )
+    if args.command == "inter1d":
+        output_format = args.output_format if args.output_format != "auto" else detect_loop_output_format(args.input, args.header, parse_loop_columns(args.loop_columns))
+        return loop_inter1d(
+            args.input, args.bed, args.output, output_format=output_format, header=args.header,
+            loop_columns=parse_loop_columns(args.loop_columns), distance=args.distance,
+            invert=args.invert, unique=args.unique, direction=args.direction,
+        )
+    if args.command == "inter":
+        output_format = args.output_format if args.output_format != "auto" else detect_loop_output_format(args.input, args.header, parse_loop_columns(args.loop_columns))
+        return loop_inter(
+            args.input, args.other, args.output, output_format=output_format, header=args.header,
+            loop_columns=parse_loop_columns(args.loop_columns), distance=args.distance,
+            union=args.union, keep=args.keep, direction=args.direction,
+        )
+    if args.command == "merge":
+        output_format = args.output_format if args.output_format != "auto" else detect_loop_output_format(args.input, args.header, parse_loop_columns(args.loop_columns))
+        return loop_merge(
+            args.input, args.output, output_format=output_format, header=args.header,
+            loop_columns=parse_loop_columns(args.loop_columns), distance=args.distance, direction=args.direction,
+        )
     if args.command == "combined":
         return run_combined(args)
     if args.command == "list-db":
@@ -546,6 +592,22 @@ def run(args: argparse.Namespace) -> Optional[Path]:
             print("  ".join(value.ljust(widths[index]) for index, value in enumerate(row)).rstrip())
         return None
     raise ValueError(f"Unknown command: {args.command}")
+
+
+def detect_loop_output_format(
+    path: Path, header: str, columns: tuple[int, int, int, int, int, int]
+) -> str:
+    """Detect BEDPE versus text output for loop-operation commands."""
+    if header == "yes":
+        return "txt"
+    if header == "no":
+        return "bedpe"
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        if not raw.strip() or raw.startswith(("#", "track", "browser")):
+            continue
+        fields = raw.split("\t")
+        return "bedpe" if all(fields[index].lstrip("-").isdigit() for index in (columns[1], columns[2], columns[4], columns[5])) else "txt"
+    raise ValueError(f"No loop records found in {path}")
 
 
 def run_combined(args: argparse.Namespace) -> Optional[Path]:

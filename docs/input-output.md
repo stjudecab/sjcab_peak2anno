@@ -18,9 +18,18 @@ chr1:100-200
 chr2^300=450
 ```
 
-`--input-format auto` detects BED, headered text, or headerless text. Force a
-format with `bed`, `txt`, or `txtnohead`; use `--region-column` for another
-text column.
+`--input-format auto` detects BED, VCF, headered text, or headerless text.
+Force a format with `bed`, `vcf`, `txt`, or `txtnohead`; use
+`--region-column` for another text column.
+
+VCF records use standard one-based coordinates and are converted to BED-style
+half-open intervals: `start = POS - 1`, `end = start + len(REF)`. The output
+keeps VCF columns after the coordinates, with text output beginning with
+`Region`, followed by `ID`, `REF`, `ALT`, and the remaining VCF columns.
+
+```bash
+peak2anno peak2gene variants.vcf -s hg38 -f txt -o variants.tsv
+```
 
 Multiple input files are accepted as a comma-separated value or as one path
 per line in a file ending in `.lst` or `.list`. Blank lines and lines starting

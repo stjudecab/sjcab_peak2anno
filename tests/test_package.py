@@ -23,6 +23,7 @@ from sjcab_peak2anno.cli import build_parser, expand_input_paths, main
 from sjcab_peak2anno.config import load_settings
 from sjcab_peak2anno.db import available_versions
 from sjcab_peak2anno.intervals import InputRegion, output_region_header, output_region_values, read_regions
+from sjcab_peak2anno.loopops import loop_inter1d, loop_inter, loop_merge
 from sjcab_peak2anno.peak2gene import PeakGeneConfig, annotate_peak2gene, promoter_records
 from sjcab_peak2anno.runtime import ToolStatus, resolve_backend
 
@@ -49,6 +50,67 @@ def test_headerless_bed_text_output_assumes_bed3(tmp_path: Path) -> None:
     header, _regions = read_regions(path, input_format="bed")
     assert header == ["chr", "start", "end", "field4", "field5", "field6", "field7"]
     assert output_region_header(header, "txt") == ["Region", "field4", "field5", "field6", "field7"]
+
+
+def test_vcf_input_uses_ref_length_for_half_open_interval(tmp_path: Path) -> None:
+    """VCF POS/REF coordinates are converted to BED-style variant intervals."""
+    path = write(
+        tmp_path / "variants.vcf",
+        "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+        "chr1\t101\trs1\tA\tG\t.\tPASS\t.\n"
+        "chr2\t200\tindel\tAT\tA\t.\tPASS\t.\n",
+    )
+    header, regions = read_regions(path)
+    assert header == ["chr", "start", "end", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO"]
+    assert [(item.chrom, item.start, item.end) for item in regions] == [("chr1", 100, 101), ("chr2", 199, 201)]
+
+
+def test_loop_operations_and_directions(tmp_path: Path) -> None:
+    """Loop operations preserve source/target semantics and output formats."""
+    loops = write(tmp_path / "loops.bedpe", "chr1\t0\t10\tchr1\t100\t110\tA\nchr1\t5\t15\tchr1\t105\t115\tB\n")
+    other = write(tmp_path / "other.bedpe", "chr1\t2\t8\tchr1\t102\t108\tC\n")
+    bed = write(tmp_path / "regions.bed", "chr1\t4\t6\n")
+    intersect1d_out = tmp_path / "intersect1d.tsv"
+    loop_inter1d(loops, bed, intersect1d_out, direction="source")
+    assert len(read_tsv(intersect1d_out)) == 3
+    intersect_out = tmp_path / "intersect.tsv"
+    loop_inter(loops, other, intersect_out, direction="direction")
+    assert len(read_tsv(intersect_out)) == 3
+    merge_out = tmp_path / "merge.tsv"
+    loop_merge(loops, merge_out, direction="both")
+    merged = read_tsv(merge_out)
+    assert len(merged) == 2
+    assert merged[1][:6] == ["chr1", "0", "15", "chr1", "100", "115"]
+    source_out = tmp_path / "merge-source.tsv"
+    loop_merge(loops, source_out, output_format="txtnohead", direction="source")
+    source_rows = read_tsv(source_out)
+    assert [row[:6] for row in source_rows] == [
+        ["chr1", "0", "15", "chr1", "100", "110"],
+        ["chr1", "0", "15", "chr1", "105", "115"],
+    ]
+    for output_format in ("bedpe", "txt", "txtnohead"):
+        path = tmp_path / f"inter1d-{output_format}.out"
+        loop_inter1d(loops, bed, path, output_format=output_format)
+        rows = read_tsv(path)
+        assert rows and (output_format != "txt" or rows[0][0] == "chr1")
+
+
+def test_loop_cli_names_and_direction_options() -> None:
+    """The public loop operation names expose direction choices."""
+    parser = build_parser()
+    assert parser.parse_args(["inter1d", "-i", "tests_data/loops.bedpe", "-b", "tests_data/loop_regions.bed", "-D", "target"]).direction == "target"
+    assert parser.parse_args(["inter", "-i", "tests_data/loops.bedpe", "-b", "tests_data/other.bedpe", "-D", "reverse"]).direction == "reverse"
+    assert parser.parse_args(["merge", "-i", "tests_data/loops.bedpe", "-D", "source"]).direction == "source"
+
+
+def test_reverse_loop_intersection_matches_opposite_anchors(tmp_path: Path) -> None:
+    """Reverse direction maps source to target and target to source."""
+    first = write(tmp_path / "first.bedpe", "chr1\t0\t10\tchr1\t100\t110\tA\n")
+    second = write(tmp_path / "second.bedpe", "chr1\t105\t115\tchr1\t5\t15\tB\n")
+    output = tmp_path / "reverse.bedpe"
+    loop_inter(first, second, output, output_format="bedpe", direction="reverse")
+    rows = read_tsv(output)
+    assert rows[0][:6] == ["chr1", "5", "10", "chr1", "105", "110"]
 
 
 def read_tsv(path: Path) -> list[list[str]]:

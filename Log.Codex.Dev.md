@@ -1,5 +1,12 @@
 # Development Log
 
+## 2026-11-04
+
+- Added VCF input support and indexed paired-loop operations.
+- Renamed loop operation commands to `inter1d`, `inter`, and `merge`.
+- Added source/target and reverse anchor-direction semantics, all loop output
+  formats, BEDPE fixtures, README examples, and 39 regression tests.
+
 ## 2026-09-25
 
 - Added comma-separated and `.lst`/`.list` multi-input support with parallel

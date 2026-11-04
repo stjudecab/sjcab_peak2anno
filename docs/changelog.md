@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4 / 2026-11-04
+
+- Added VCF input support using POS/REF-length conversion to BED half-open
+  intervals, plus Python loop `inter1d`, `inter`, and `merge` operations.
+  Indexed Python loop
+  operations were benchmarked faster than the installed pgltools Python 2
+  implementations on representative inputs.
+- Renamed paired-loop commands to `inter1d`, `inter`, and `merge`.
+- Added source/target anchor direction controls for one-dimensional
+  intersection, paired-loop intersection, and one-anchor loop merging.
+- Confirmed `bedpe`, `txt`, and `txtnohead` output for all paired-loop
+  operations and added BEDPE fixtures for direction and merge tests.
+
 ## Unreleased
 
 ## 0.3 / 2026-09-25
