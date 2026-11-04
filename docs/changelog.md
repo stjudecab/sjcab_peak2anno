@@ -13,8 +13,6 @@
 - Confirmed `bedpe`, `txt`, and `txtnohead` output for all paired-loop
   operations and added BEDPE fixtures for direction and merge tests.
 
-## Unreleased
-
 ## 0.3 / 2026-09-25
 
 - Changed multi-input file output to write one result per input using an
